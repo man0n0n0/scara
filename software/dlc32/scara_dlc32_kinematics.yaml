@@ -1,0 +1,418 @@
+# ---------------------------------------------------------------------------
+# FluidNC config - 2-joint SCARA + Z leadscrew, COUPLED elbow.
+# Requires a build including fluidnc-scara/Scara.{h,cpp}.
+#
+# G-code here is ordinary cartesian mm. The firmware solves the joint angles.
+#
+# Controller: MKS DLC32. Pinout verified against a working DLC32 config.
+#
+# NOTE: FluidNC 4.0.2 does NOT support comments on the same line as a value.
+# Every comment is on its own line. Do not move any up onto a value line.
+# ---------------------------------------------------------------------------
+#
+# UNITS RECAP
+# FluidNC key names end in _mm, but on the two joint axes (X = J1, Y = J2)
+# the motor unit is the DEGREE. The key name does not change; the unit does.
+#
+#   kinematics / SCARA
+#     arm1_mm, arm2_mm              mm          pivot to pivot, pivot to tool
+#     r_min_mm, r_max_mm, x_min_mm  mm          tool position, from shoulder axis
+#     kinematic_segment_len_mm      mm          max tool travel per segment
+#     j1_min_deg, j1_max_deg        deg         J1 ABSOLUTE, from +X
+#     j2_min_deg, j2_max_deg        deg         J2 RELATIVE, from arm1's
+#                                               extension (0 = arm straight)
+#     max_segment_deg               deg         max joint turn per segment
+#
+#   axes x and y (the joints)
+#     steps_per_mm                  steps/deg
+#     max_rate_mm_per_min           deg/min     JOINT speed cap, not tool speed
+#     acceleration_mm_per_sec2      deg/s^2
+#     max_travel_mm                 deg         only sizes the homing seek
+#     homing mpos_mm                deg         X: absolute from +X
+#                                               Y: relative elbow when
+#                                                  j2_home_relative: true
+#                                               both: angle AT REST, after the
+#                                                  pulloff, not at the sensor
+#     homing feed/seek_mm_per_min   deg/min
+#     pulloff_mm                    deg
+#
+#   axis z (leadscrew, untransformed)
+#     steps_per_mm                  steps/mm
+#     max_rate_mm_per_min           mm/min
+#     acceleration_mm_per_sec2      mm/s^2
+#     max_travel_mm, mpos_mm,
+#     pulloff_mm                    mm
+#     homing feed/seek_mm_per_min   mm/min
+#
+#   both joint and Z axes
+#     settle_ms                     ms
+#     seek_scaler, feed_scaler      x           multiplier, no unit
+#
+#   stepping
+#     idle_ms                       ms          255 = never disable
+#     pulse_us, dir_delay_us,
+#     disable_delay_us              us
+#
+#   motion planner (it works on MOTOR positions, Planner.cpp:332)
+#     junction_deviation_mm         deg on X/Y, mm on Z
+#     arc_tolerance_mm              mm          at the tool, MotionControl.cpp:230
+#
+#   G-code and reports
+#     G-code X Y Z                  mm          tool, cartesian, origin at the
+#                                               shoulder axis (G53)
+#     G-code F                      mm/min      tool speed; converted to joint
+#                                               speed per segment, then capped
+#                                               by each joint's max_rate
+#     MPos in Idle / Run / Jog      mm          tool, cartesian
+#     MPos in Home state            deg / mm    raw MOTOR positions
+#                                               (Report.cpp:505)
+#
+#   converting joint to tool, at tool radius r (mm)
+#     1 deg on J1                   = r * 0.01745 mm at the tool
+#     example: r = 1500 mm          1 deg = 26.2 mm, 1 deg/min = 26.2 mm/min
+# ---------------------------------------------------------------------------
+
+board: MKS-DLC32
+name: SCARA coupled + Z
+
+kinematics:
+  SCARA:
+    # shoulder pivot -> elbow pivot
+    arm1_mm: 1090.0
+    # elbow pivot -> tool centre
+    arm2_mm: 1050.0
+    # Elbow motor is at the base, driving arm2 by a belt over the shoulder
+    # axis, same reduction and same direction as J1. The Y motor therefore
+    # commands arm2's ABSOLUTE angle. See note [1].
+    coupled_elbow: true
+    j1_min_deg: 0
+    j1_max_deg: 190
+    # RELATIVE elbow limits: what the mechanical stops act on. See note [2].
+    j2_min_deg: -290
+    j2_max_deg: 200
+    # The J2 sensor is on arm1, so it trips at a fixed angle RELATIVE to arm1.
+    # mpos_mm on the Y axis is therefore that RELATIVE elbow angle, and J2 may
+    # home BEFORE J1. See note [5].
+    j2_home_relative: true
+    # Default elbow branch, used only before homing. After homing the module
+    # reads the branch from the motors (like RepRapFirmware), so this can no
+    # longer contradict the real arm. Set to match: the homed elbow is -150.
+    elbow_positive: false
+    kinematic_segment_len_mm: 10.0
+    # Largest joint rotation per segment. Near a singularity a millimetre of
+    # tool motion needs a huge joint motion, which one segment would execute as
+    # a single violent hop straight through joint space.
+    max_segment_deg: 2.0
+    # Work-envelope guards. See note [7].
+    # Keeps the arm out of the folded-up centre, which is singular.
+    r_min_mm: 10
+    # A little short of the 240mm reach, to stay off the extended singularity.
+    r_max_mm: 2500
+
+stepping:
+  engine: I2S_STATIC
+  # 255 is special: never disable. The arms backdrive.
+  idle_ms: 255
+  pulse_us: 6
+  dir_delay_us: 10
+  disable_delay_us: 0
+
+i2so:
+  bck_pin: gpio.16
+  data_pin: gpio.21
+  ws_pin: gpio.17
+
+axes:
+  shared_stepper_disable_pin: I2SO.0
+
+  # ---------------- J1 : shoulder, absolute angle in degrees ----------------
+  x:
+    # steps per DEGREE - use scara_steps.py
+    # 1600 pulses/rev × (122 / 20) ÷ 360° = 9760 ÷ 360 = 27.1111 steps/deg
+    steps_per_mm: 27.11
+    max_rate_mm_per_min: 83333
+    acceleration_mm_per_sec2: 6
+    max_travel_mm: 270
+    # must stay false: max_travel_mm here is an angle. See note [3].
+    soft_limits: false
+    homing:
+      # J1 homes FIRST among the joints, rigidly. See note [4].
+      cycle: 2
+      positive_direction: true
+      # J1 absolute angle at its sensor, in degrees
+      mpos_mm: 150
+      feed_mm_per_min: 120
+      seek_mm_per_min: 700
+      settle_ms: 500
+      seek_scaler: 1.1
+      feed_scaler: 1.1
+    motor0:
+      # A3144 hall sensor, pulls LOW on magnet
+      limit_pos_pin: gpio.36:low
+      hard_limits: false
+      pulloff_mm: 15
+      stepstick:
+        step_pin: I2SO.1
+        direction_pin: I2SO.2
+        disable_pin: NO_PIN
+
+  # ---------------- J2 : arm2 ABSOLUTE angle in degrees ----------------
+  y:
+    steps_per_mm: 27.11
+    max_rate_mm_per_min: 83333
+    acceleration_mm_per_sec2: 6
+    # Absolute angle spans BOTH windows summed: 270 + 300. See note [2].
+    max_travel_mm: 570
+    soft_limits: false
+    homing:
+      # J2 homes AFTER J1, in its own cycle, never together. See note [4].
+      cycle: 3
+      positive_direction: false
+      # With j2_home_relative: true this is the RELATIVE elbow angle (arm2
+      # measured against arm1) once the pulloff has completed - NOT an absolute
+      # angle. MEASURE YOURS. See notes [5] and [8].
+      mpos_mm: -87
+      feed_mm_per_min: 700
+      seek_mm_per_min: 500
+      settle_ms: 500
+      seek_scaler: 1.5
+      feed_scaler: 1.5
+    motor0:
+      limit_neg_pin: gpio.35:low
+      hard_limits: false
+      # 15 degrees, not 3: this is what lifts the resting pose out of the
+      # folded singularity. See note [8].
+      pulloff_mm: 90
+      stepstick:
+        step_pin: I2SO.5
+        direction_pin: I2SO.6:low
+        disable_pin: NO_PIN
+
+  # ---------------- Z : leadscrew, mm, untransformed ----------------
+  z:
+    steps_per_mm: 320
+    max_rate_mm_per_min: 600
+    acceleration_mm_per_sec2: 50
+    max_travel_mm: 610
+    # Z is linear, so ordinary soft limits work here
+    soft_limits: true
+    homing:
+      # Z retracts before anything swings
+      cycle: 1
+      positive_direction: false
+      mpos_mm: 0
+      feed_mm_per_min: 100
+      seek_mm_per_min: 500
+      settle_ms: 250
+      seek_scaler: 1.1
+      feed_scaler: 1.1
+    motor0:
+      limit_neg_pin: gpio.34
+      hard_limits: false
+      pulloff_mm: 10
+      stepstick:
+        step_pin: I2SO.3
+        direction_pin: I2SO.4:low
+        disable_pin: NO_PIN
+
+probe:
+  pin: gpio.22
+  check_mode_start: true
+
+sdcard:
+  cs_pin: gpio.15
+  card_detect_pin: gpio.39
+
+spi:
+  miso_pin: gpio.12
+  mosi_pin: gpio.13
+  sck_pin: gpio.14
+
+control:
+  safety_door_pin: NO_PIN
+  reset_pin: NO_PIN
+  feed_hold_pin: NO_PIN
+  cycle_start_pin: NO_PIN
+  macro0_pin: NO_PIN
+  macro1_pin: NO_PIN
+  macro2_pin: NO_PIN
+  macro3_pin: NO_PIN
+
+coolant:
+  flood_pin: NO_PIN
+  mist_pin: NO_PIN
+  delay_ms: 0
+
+# ---------------- HEAD LIGHT, driven as the spindle ----------------
+# The white light at the tip of arm2 is the "spindle": M3 S<n> sets its
+# brightness, M5 turns it off. The control page (ui/scara.html) sends exactly
+# that. See note [9].
+# PWM, not Laser: in laser mode the output is cut whenever the arm is not
+# moving, so the light would go dark at every stop.
+PWM:
+  pwm_hz: 5000
+  # DLC32 spindle / laser TTL output (IO32). CHECK on your board revision.
+  output_pin: gpio.32
+  enable_pin: NO_PIN
+  direction_pin: NO_PIN
+  # S0..S1000 = 0..100 % duty, linear. The page assumes S max = 1000.
+  speed_map: 0=0.000% 1000=100.000%
+  # REQUIRED for M5 to turn the light off. By default M5 only drops the
+  # enable pin and leaves the PWM duty at the last S (PWMSpindle.cpp,
+  # setState -> mapSpeed). With enable_pin NO_PIN the light would stay lit.
+  s0_with_disable: true
+  # And S0 counts as off too, the same as M5.
+  disable_with_s0: true
+  # A light needs no spin-up: M3 returns at once.
+  spinup_ms: 0
+  spindown_ms: 0
+  # Keep the light as it was on an alarm: it is the only light in the room.
+  off_on_alarm: false
+  tool_num: 0
+
+start:
+  must_home: true
+
+arc_tolerance_mm: 0.002
+junction_deviation_mm: 0.01
+verbose_errors: false
+report_inches: false
+
+# ---------------------------------------------------------------------------
+# [1] COUPLED ELBOW. The elbow motor is at the base and drives arm2 through a
+#     belt over the shoulder axis, same reduction and same direction as J1.
+#     So:
+#         motor X = theta1        shoulder absolute angle
+#         motor Y = phi           arm2 ABSOLUTE angle, NOT relative to arm1
+#         relative elbow          theta2 = motor Y - motor X
+#
+#     Hold Y still, turn X: the belt keeps arm2 pointing the same way in world
+#     space while arm1 swings beneath it. If your machine does NOT behave that
+#     way on the bench, set coupled_elbow: false and re-measure, because every
+#     coordinate depends on this being right.
+#
+# [2] j2_min_deg / j2_max_deg are the RELATIVE elbow angle, because that is
+#     what the mechanical stops act on. The Y MOTOR's range is the sum of both
+#     windows, which is why max_travel_mm on Y is 570 and not 300. That value
+#     only sizes the homing seek sweep; the kinematics enforces the real limit.
+#
+# [3] soft_limits must stay false on both joints: that machinery compares
+#     cartesian targets against max_travel_mm, which here is an angle. Reach
+#     and joint range are enforced by the kinematics module.
+#
+# [4] HOMING ORDER. Cycles are Z(1), J1(2), J2(3) - one joint per cycle, never
+#     together.
+#
+#     J1 goes first. While it sweeps, the module drives the Y motor by the same
+#     amount in the same direction, so the arm turns RIGIDLY: joint 2 keeps the
+#     elbow angle it started with and arm2 simply swings round with arm1. The
+#     relative angle is held to about 0.001 degrees over a full sweep.
+#
+#     Then J2 homes alone, with the shoulder already parked at a known angle,
+#     so the elbow swings in a known orientation.
+#
+#     CONSEQUENCE OF GOING J1 FIRST: the shoulder sweeps with the elbow at
+#     whatever angle it happens to hold, so the arm sweeps at its CURRENT
+#     radius. Starting from a folded pose that radius is small and the sweep is
+#     compact; starting extended it is up to 240mm and can reach a wall.
+#
+#     In steady state this is fine: every homing after the first starts from
+#     the previous homed pose, folded, about 62mm of radius. It is the FIRST
+#     homing after a power-up in an arbitrary pose that deserves care - fold
+#     the arm by hand first, and keep a hand on the power switch.
+#
+#     Homing J2 first instead would guarantee a compact sweep, at the cost of
+#     swinging the elbow while the shoulder angle is still unknown. Both orders
+#     produce identical final angles: see note [5].
+#
+# [5] J2 SENSOR ON ARM1 (j2_home_relative: true).
+#     Mounted there, the sensor trips at a fixed angle RELATIVE to arm1, and no
+#     cable crosses a rotating joint. mpos_mm on Y is therefore that RELATIVE
+#     elbow angle, not an absolute one.
+#
+#     This is what allows J2 to home before J1: at that moment the shoulder
+#     angle is still unknown, so J2's absolute angle cannot be known either.
+#     The module records the relative angle against the unhomed shoulder, and
+#     when J1 later homes it shifts BOTH motors by the same correction. The
+#     relative angle - the only thing the sensor actually measured - survives
+#     untouched, and both become absolutely correct. Homing J2 first and homing
+#     J1 first give identical final angles.
+#
+#     If instead your J2 sensor reads an ABSOLUTE arm2 angle (sensor fixed to
+#     the base), set j2_home_relative: false and make mpos_mm absolute. J2 must
+#     then home AFTER J1.
+# ---------------------------------------------------------------------------
+#
+# [6] THIS MACHINE HOMES FOLDED, AT A SINGULARITY.
+#     Measured at home: tool about 1.9mm from the shoulder axis, relative elbow
+#     angle near 180 degrees - the arm doubled back on itself.
+#
+#     Consequences, in order of how soon they bite:
+#       - j2_min/max must admit that angle, hence +/-180 above. With the old
+#         +/-150 every move from home was rejected as unreachable, which is
+#         what made jogging appear broken.
+#       - At r ~ 0 the IK is degenerate: a tiny cartesian move demands a huge
+#         joint move. Get out of the fold before doing anything else.
+#       - Repeatability there is poor, because it is exactly where angular
+#         error has least cartesian effect, so the inverse is worst conditioned.
+#
+#     Short term: keep +/-180 and make the first move after homing a radial one,
+#     outward, via startup_line0.
+#     Better: move the J2 sensor (or raise its pulloff) so the machine homes
+#     around 120-150 degrees of elbow instead of 180.
+#
+# [7] WORK ENVELOPE (r_min_mm / r_max_mm / x_min_mm).
+#     Modelled on jared-hughes/grbl-scara, limits.c:359, whose README gives the
+#     reason plainly: "This prevents the arm from doubling back on itself too
+#     far." Reachability alone is not enough, because BOTH edges of the
+#     reachable annulus are singular:
+#
+#       r -> |arm1-arm2|  the arm folds back on itself. With equal arms that is
+#                         r = 0, where the tool position stops determining the
+#                         joint angles at all: every shoulder angle puts the
+#                         tool on the shoulder axis. A 1mm move then demands
+#                         whatever shoulder angle the IK happens to pick.
+#       r -> arm1+arm2    the arm is straight; radial accuracy collapses.
+#
+#     Each guard is relaxed to admit wherever the arm already is, so it can
+#     block ENTRY into a bad region without ever trapping the arm inside one.
+#     Homed folded at r = 0, the machine can still move outward.
+#
+#     x_min_mm is a straight-line blockage for a column or a bench edge; left
+#     at its default it is disabled.
+#
+# [8] RESTING POSE MUST NOT BE THE FOLDED SINGULARITY.
+#     The J2 sensor trips near a fully folded elbow (about 180 degrees), which
+#     puts the tool on the shoulder axis at r = 0. There the kinematics is not
+#     merely ill-conditioned but NON-UNIQUE: every shoulder angle puts the tool
+#     at the same point, so a 1mm cartesian move demands whatever shoulder angle
+#     the IK happens to pick - hundreds of degrees of rotation.
+#
+#     Homing::set_mpos() (Homing.cpp:136) runs at CycleDone, AFTER every pulloff
+#     phase, so mpos_mm describes the RESTING position, not the switch. A large
+#     Y pulloff therefore parks the elbow clear of the fold, and mpos_mm is the
+#     angle it rests at. pulloff_mm accepts up to 100000 (Motor.cpp:53).
+#
+#     With equal 120mm arms, r = 2 * 120 * |cos(theta2 / 2)|:
+#
+#         pulloff    theta2 at rest    radius at rest
+#            3 deg       -177 deg           6 mm     <- singular
+#           20 deg       -160 deg          42 mm
+#           30 deg       -150 deg          62 mm     <- used here
+#           45 deg       -135 deg          92 mm
+#
+#     Check after every $H, in Idle state (in Home state MPos shows motors, not
+#     cartesian - Report.cpp:505): hypot(MPos_x, MPos_y) must be about 62mm.
+#     If it is near zero, DO NOT JOG.
+#
+# [9] HEAD LIGHT ON THE SPINDLE OUTPUT.
+#     The DLC32 spindle connector gives a 0-5V PWM SIGNAL, not power. The LED
+#     needs a driver or a logic-level MOSFET with a PWM input between that pin
+#     and its own supply. Never wire the LED straight onto the pin.
+#
+#     M3 S600   light at 60 %        M5   light off
+#     The status report carries it: |FS:<feed>,<S>| and |A:S| while lit.
+#
+#     G-code is refused while jogging, so a brightness change waits for the
+#     arm to stop. The light itself stays on through moves: a PWM spindle,
+#     unlike a laser, is not cut when motion stops.

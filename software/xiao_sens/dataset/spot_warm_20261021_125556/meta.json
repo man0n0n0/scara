@@ -1,0 +1,27 @@
+{
+  "session": "spot_warm_20261021_125556",
+  "lighting": "spot_warm",
+  "negatives": false,
+  "note": "",
+  "started": "2026-10-21T12:55:56",
+  "camera": {
+    "framesize": 8,
+    "quality": 4,
+    "brightness": 1,
+    "contrast": 2,
+    "saturation": 0,
+    "ae_level": -2,
+    "aec": 1,
+    "aec_value": 799,
+    "agc": 1,
+    "agc_gain": 4,
+    "awb": 1,
+    "vflip": 0,
+    "hmirror": 1
+  },
+  "frames": 50,
+  "frame_sizes": [
+    "640x480"
+  ],
+  "ended": "2026-10-21T12:56:27"
+}

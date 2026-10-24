@@ -1,0 +1,69 @@
+{
+  "session": "spot_warm_20261012_174734",
+  "lighting": "spot_warm",
+  "negatives": false,
+  "note": "",
+  "started": "2026-10-12T17:47:34",
+  "camera": {
+    "mode": "disabled",
+    "reason": "calibration failed: target lost after calibration (0/17 frames)",
+    "fluidnc": {
+      "connected": true,
+      "state": "Idle",
+      "mpos": [
+        263.2,
+        1347.27,
+        0.0
+      ]
+    },
+    "target_u": 0.098,
+    "target_v": -0.5,
+    "v_cmd": [
+      0.0,
+      0.0
+    ],
+    "detection": {
+      "found": false,
+      "u": 0.0,
+      "v": 0.0,
+      "conf": 0.0,
+      "cells": 0,
+      "infer_ms": 447
+    },
+    "fps": 2.2,
+    "jogs_sent": 18,
+    "cancels": 0,
+    "calibrated": false,
+    "J": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ]
+    ],
+    "phi0_deg": 0.0,
+    "z0": 0.0,
+    "model": "man0n0n0-project-1 v9, 96x96, label 'wormbot'",
+    "heap": 233472,
+    "psram": 6819695,
+    "params": {
+      "kp": 1.0,
+      "vmax": 60.0,
+      "amax": 150.0,
+      "db_in": 0.04,
+      "db_out": 0.08,
+      "alpha": 0.5,
+      "min_conf": 0.5,
+      "lost_ms": 2000,
+      "horizon_s": 0.25,
+      "cal_step": 30.0,
+      "cal_feed": 1200
+    }
+  },
+  "frames": 0,
+  "frame_sizes": [],
+  "ended": "2026-10-12T17:47:37"
+}

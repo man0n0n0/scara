@@ -1,0 +1,5 @@
+.pio/
+__pycache__/
+*.pyc
+# WiFi credentials
+include/secrets.h

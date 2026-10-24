@@ -1,0 +1,1189 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>compliance_contentio · Pilotage</title>
+<meta name="description" content="Pilotage en direct du bras SCARA : visualisation, déplacement au doigt, capteurs, lumière, fichiers et configuration du contrôleur.">
+<style>
+/* Same sheet as the implantation plan, but the room is drawn at night:
+   the head's white light is the only light in the room. No web fonts: the
+   ESP32 access point has no internet, so the Plex stack falls back cleanly. */
+:root {
+  --paper: #ffffff;
+  --ink: #111111;
+  --muted: #5a5a5a;
+  --hair: #c8c8c8;
+  --floor: #1a1a1a;
+  --arm1: #ededed;
+  --arm2: #a9a9a9;
+  --reach: #1f5fa6;
+  --out: #c62828;
+  --ok: #1f7a3a;
+  --warn: #a35f00;
+  --lamp: #fffbea;
+  --f-display: "IBM Plex Sans Condensed", "Arial Narrow", sans-serif;
+  --f-body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--paper); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-inline: 16px; padding-block: calc(20px + env(safe-area-inset-top, 0px)) calc(32px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 16px; }
+
+header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px; border-bottom: 2px solid var(--ink); padding-bottom: 12px; }
+.eyebrow { font-family: var(--f-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+h1 { font-family: var(--f-display); font-weight: 600; font-size: clamp(24px, 4vw, 34px); line-height: 1.05; margin: 2px 0 0; text-transform: uppercase; }
+h1 .dev { font-family: var(--f-mono); font-weight: 500; text-transform: none; }
+h2 { font-family: var(--f-display); font-weight: 600; font-size: 14px; letter-spacing: .08em; text-transform: uppercase; margin: 0; padding-bottom: 6px; border-bottom: 1px solid var(--ink); display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+h2 small { font-family: var(--f-mono); font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.section-title { font-family: var(--f-display); font-weight: 600; font-size: 20px; letter-spacing: .04em; text-transform: uppercase; margin: 8px 0 0; padding-bottom: 6px; border-bottom: 2px solid var(--ink); }
+
+.conn { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-family: var(--f-mono); font-size: 13px; }
+button, .btn { font: 500 13px var(--f-mono); padding: 7px 11px; border: 1.5px solid var(--ink); background: #fff; color: var(--ink); border-radius: 0; cursor: pointer; touch-action: manipulation; text-decoration: none; display: inline-block; line-height: 1.3; }
+button:hover:not(:disabled), .btn:hover { background: #f0f0f0; }
+button:disabled { opacity: .35; cursor: default; }
+button.solid { background: var(--ink); color: #fff; }
+button.solid:hover:not(:disabled) { background: #333; }
+button.stop { background: var(--out); border-color: var(--out); color: #fff; font-weight: 600; letter-spacing: .06em; font-size: 15px; padding: 12px; }
+button.stop:hover:not(:disabled) { background: #a51f1f; }
+button.mini, .btn.mini { padding: 3px 7px; font-size: 12px; border-width: 1px; }
+button.danger { color: var(--out); border-color: var(--out); }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border: 1px solid var(--hair); }
+.dot { width: 9px; height: 9px; flex: none; background: var(--hair); }
+.dot.on { background: var(--ok); } .dot.sim { background: var(--warn); } .dot.bad { background: var(--out); }
+input[type=text], select, textarea { font: 13px var(--f-mono); padding: 6px 8px; border: 1.5px solid var(--ink); border-radius: 0; background: #fff; color: var(--ink); min-width: 0; }
+input[type=file] { font: 12.5px var(--f-mono); max-width: 100%; }
+
+.app { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+.app > * { min-width: 0; }
+@media (max-width: 980px) { .app { grid-template-columns: minmax(0, 1fr); } }
+.stage { border: 1.5px solid var(--ink); padding: 10px; display: grid; gap: 8px; }
+#plan { display: block; width: 100%; height: auto; touch-action: none; cursor: crosshair; user-select: none; -webkit-user-select: none; }
+#plan.off { cursor: not-allowed; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; min-height: 26px; font: 13.5px var(--f-mono); border-top: 1px solid var(--hair); padding-top: 8px; }
+.bar .msg { flex: 1 1 260px; }
+.hint { font-size: 13px; color: var(--muted); margin: 0; }
+
+.side { display: grid; gap: 14px; }
+.card { border: 1.5px solid var(--ink); padding: 12px 14px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.state { font-family: var(--f-display); font-weight: 600; font-size: 26px; text-transform: uppercase; line-height: 1; display: flex; align-items: center; gap: 10px; }
+.state .dot { width: 14px; height: 14px; }
+.figs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 10px; margin: 0; }
+.figs div { display: grid; gap: 1px; min-width: 0; }
+.figs dt { font-size: 11.5px; color: var(--muted); }
+.figs dd { margin: 0; font: 500 16px var(--f-mono); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.row > button { flex: 1 1 auto; }
+
+.sensors { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.sensors li { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border: 1px solid var(--hair); font-size: 13.5px; }
+.sensors li b { font: 500 12px var(--f-mono); margin-left: auto; color: var(--muted); }
+.led { width: 12px; height: 12px; border: 1.5px solid var(--ink); flex: none; background: #fff; }
+.sensors li.hit { border-color: var(--ink); background: #f3f3f3; }
+.sensors li.hit .led { background: var(--out); border-color: var(--out); }
+.sensors li.hit b { color: var(--out); }
+
+.lamp { display: grid; grid-template-columns: 56px 1fr; gap: 12px; align-items: center; }
+.bulb { width: 56px; height: 56px; border-radius: 50%; background: var(--floor); border: 1.5px solid var(--ink); position: relative; overflow: hidden; }
+.bulb i { position: absolute; inset: 0; background: radial-gradient(circle, var(--lamp) 0 22%, rgba(255,251,234,.55) 38%, rgba(255,251,234,0) 70%); opacity: 0; transition: opacity .25s; }
+.lamp .big { font: 500 20px var(--f-mono); }
+.lamp .sub { font-size: 12.5px; color: var(--muted); }
+label.rng { display: grid; gap: 4px; font-size: 12.5px; color: var(--muted); }
+label.rng span { display: flex; justify-content: space-between; }
+label.rng output { font-family: var(--f-mono); color: var(--ink); }
+input[type=range] { width: 100%; accent-color: var(--ink); margin: 0; height: 28px; }
+/* vertical Z rail, beside the plan: the arm's carriage seen from the side */
+.planrow { display: grid; grid-template-columns: minmax(0, 1fr) 68px; gap: 10px; align-items: stretch; }
+.zcol { display: grid; grid-template-rows: auto minmax(160px, 1fr) auto; gap: 6px; text-align: center; min-width: 0; }
+.zcol .zl { font: 600 13px var(--f-display); letter-spacing: .06em; }
+.zcol output { font: 12px var(--f-mono); line-height: 1.3; }
+.zcol output b { display: block; font-weight: 500; font-size: 14px; }
+.ztrack { position: relative; border: 1.5px solid var(--ink); background: #fff; touch-action: none; cursor: ns-resize; user-select: none; -webkit-user-select: none; }
+.ztrack:focus-visible { outline: 2px solid var(--reach); outline-offset: 2px; }
+.ztrack.off { cursor: not-allowed; }
+.ztrack.off .zthumb { background: var(--hair); }
+.zrail { position: absolute; left: 62%; top: 8px; bottom: 8px; width: 2px; background: var(--ink); transform: translateX(-1px); }
+.ztick { position: absolute; left: 0; right: 0; border-top: 1px solid var(--hair); }
+.ztick span { position: absolute; left: 3px; top: -7px; font: 10px/1 var(--f-mono); color: var(--muted); background: #fff; padding-right: 2px; }
+.zthumb { position: absolute; left: 40%; right: 5px; height: 12px; background: var(--ink); transform: translateY(-50%); pointer-events: none; }
+.znow { position: absolute; left: 34%; right: 0; height: 3px; background: var(--reach); transform: translateY(-50%); pointer-events: none; }
+.meter { height: 6px; border: 1px solid var(--ink); position: relative; }
+.meter i { position: absolute; inset: 0 auto 0 0; background: var(--ink); }
+
+/* maintenance */
+.maint { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: start; }
+.maint > * { min-width: 0; }
+@media (max-width: 980px) { .maint { grid-template-columns: minmax(0, 1fr); } }
+.tabs { display: flex; gap: 0; }
+.tabs button { border-width: 1.5px; margin-right: -1.5px; }
+.tabs button[aria-pressed=true] { background: var(--ink); color: #fff; }
+.crumbs { font: 13px var(--f-mono); display: flex; flex-wrap: wrap; gap: 2px; align-items: center; }
+.crumbs a { color: var(--ink); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.files { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.files th { text-align: left; font: 500 11.5px var(--f-mono); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; border-bottom: 1px solid var(--ink); padding: 4px 6px; }
+.files td { border-bottom: 1px solid var(--hair); padding: 6px; vertical-align: middle; }
+.files td.n { font-family: var(--f-mono); word-break: break-all; }
+.files td.n a { color: var(--ink); cursor: pointer; font-weight: 600; }
+.files td.s { font-family: var(--f-mono); white-space: nowrap; text-align: right; color: var(--muted); }
+.files td.a { text-align: right; white-space: nowrap; }
+.files td.a > * { margin-left: 4px; }
+.files .empty { color: var(--muted); text-align: center; padding: 18px; }
+@media (max-width: 640px) { .files td.a { white-space: normal; } .files td.a > * { margin: 2px 0 2px 4px; } }
+.prog { font: 12.5px var(--f-mono); color: var(--muted); min-height: 1.4em; }
+.kv { font: 13px var(--f-mono); }
+.kv b { font-weight: 500; }
+.console { display: flex; gap: 6px; }
+.console input { flex: 1; }
+.log { font: 12px/1.45 var(--f-mono); color: var(--muted); margin: 0; padding: 0; list-style: none; height: 13em; overflow: auto; border: 1px solid var(--hair); padding: 6px; }
+.log li { white-space: pre-wrap; word-break: break-word; }
+.log li.err { color: var(--out); }
+.log li.out { color: var(--ink); }
+.fine { font-size: 12.5px; color: var(--muted); margin: 0; }
+
+dialog { border: 2px solid var(--ink); border-radius: 0; padding: 14px; width: min(900px, calc(100vw - 32px)); }
+dialog::backdrop { background: rgba(0,0,0,.45); }
+dialog form { display: grid; gap: 10px; }
+dialog textarea { width: 100%; height: min(65vh, 640px); resize: vertical; font-size: 12.5px; line-height: 1.45; tab-size: 2; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <div class="eyebrow">Pilotage en direct</div>
+      <h1><span class="dev">compliance_contentio</span> — Bras SCARA</h1>
+    </div>
+    <div class="conn">
+      <button id="bSim" hidden>Simulation</button>
+      <span class="pill"><i class="dot" id="connDot"></i><span id="connTxt">déconnecté</span></span>
+    </div>
+  </header>
+
+  <div class="app">
+    <div class="stage">
+      <div class="planrow">
+      <svg id="plan" viewBox="-0.55 -0.55 5.09 3.72" role="img" aria-label="Plan de la salle vu de dessus : le bras SCARA en temps réel, la zone qu'il peut atteindre et la lumière de sa tête">
+        <defs>
+          <pattern id="hatch" patternUnits="userSpaceOnUse" width="0.05" height="0.05" patternTransform="rotate(45)">
+            <rect width="0.05" height="0.05" fill="#ffffff"/>
+            <line x1="0" y1="0" x2="0" y2="0.05" stroke="#111111" stroke-width="0.007"/>
+          </pattern>
+          <radialGradient id="glow">
+            <stop offset="0" stop-color="#fffbea" stop-opacity=".95"/>
+            <stop offset=".18" stop-color="#fffbea" stop-opacity=".55"/>
+            <stop offset=".5" stop-color="#fffbea" stop-opacity=".14"/>
+            <stop offset="1" stop-color="#fffbea" stop-opacity="0"/>
+          </radialGradient>
+          <clipPath id="room"><rect x="0" y="0" width="3.99" height="2.92"/></clipPath>
+        </defs>
+        <rect x="0" y="0" width="3.99" height="2.92" fill="var(--floor)"/>
+        <image id="zone" preserveAspectRatio="none" href=""/>
+        <circle id="glowC" r="1.1" fill="url(#glow)" clip-path="url(#room)" opacity="0"/>
+        <g id="walls"></g>
+        <g id="target"></g>
+        <g id="arm"></g>
+        <g id="cursor"></g>
+        <g id="unknown"></g>
+      </svg>
+      <div class="zcol">
+        <span class="zl">Z</span>
+        <div class="ztrack off" id="zTrack" role="slider" tabindex="0" aria-orientation="vertical" aria-label="Hauteur Z en mm" aria-valuemin="0" aria-valuemax="120" aria-valuenow="0">
+          <div id="zTicks"></div>
+          <i class="zrail"></i>
+          <i class="znow" id="zNow" title="Hauteur actuelle"></i>
+          <i class="zthumb" id="zThumb"></i>
+        </div>
+        <output id="oZ"><b>—</b>mm</output>
+      </div>
+      </div>
+      <div class="bar">
+        <span class="msg" id="msg" aria-live="polite">Connexion au contrôleur…</span>
+        <span id="reach"></span>
+      </div>
+      <p class="hint">Maintenez le doigt ou la souris sur le plan : la tête du bras suit. Faites glisser le rail Z à droite pour la hauteur. Relâchez, le bras termine son trajet et s'arrête. STOP interrompt tout.</p>
+    </div>
+
+    <aside class="side">
+      <section class="card">
+        <div class="state"><i class="dot" id="stDot"></i><span id="stTxt">—</span></div>
+        <dl class="figs">
+          <div><dt>X mm</dt><dd id="fX">—</dd></div>
+          <div><dt>Y mm</dt><dd id="fY">—</dd></div>
+          <div><dt>Z mm</dt><dd id="fZ">—</dd></div>
+          <div><dt>Rayon mm</dt><dd id="fR">—</dd></div>
+          <div><dt>Épaule °</dt><dd id="fJ1">—</dd></div>
+          <div><dt>Coude °</dt><dd id="fJ2">—</dd></div>
+        </dl>
+        <button id="bStop" class="stop" disabled>STOP</button>
+        <div class="row">
+          <button id="bHome" disabled>Origine $H</button>
+          <button id="bUnlock" disabled>Déverrouiller</button>
+          <button id="bReset" disabled>Réinitialiser</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Capteurs <small>fin de course</small></h2>
+        <ul class="sensors">
+          <li id="pnX"><i class="led"></i>Épaule J1<b>libre</b></li>
+          <li id="pnY"><i class="led"></i>Coude J2<b>libre</b></li>
+          <li id="pnZ"><i class="led"></i>Rail Z<b>libre</b></li>
+          <li id="pnP"><i class="led"></i>Sonde<b>libre</b></li>
+        </ul>
+      </section>
+
+      <section class="card">
+        <h2>Lumière <small id="lampState">—</small></h2>
+        <div class="lamp">
+          <div class="bulb"><i id="bulb"></i></div>
+          <div>
+            <div class="big" id="lampPct">—</div>
+            <div class="sub" id="lampS">S —</div>
+          </div>
+        </div>
+        <label class="rng"><span>Intensité demandée <output id="oPct">60 %</output></span>
+          <input type="range" id="rPct" min="0" max="100" step="1" value="60"></label>
+        <div class="row">
+          <button id="bLampOn" disabled>Allumer</button>
+          <button id="bLampOff" disabled>Éteindre</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Vitesse</h2>
+        <label class="rng"><span>Vitesse de la tête <output id="oF">1500 mm/min</output></span>
+          <input type="range" id="rF" min="200" max="20000" step="100" value="1500"></label>
+      </section>
+    </aside>
+  </div>
+
+  <h2 class="section-title">Maintenance</h2>
+  <div class="maint">
+    <section class="card">
+      <h2>Fichiers <small id="fsUsage">—</small></h2>
+      <div class="row" style="justify-content: space-between">
+        <div class="tabs" role="group" aria-label="Volume">
+          <button id="tFlash" aria-pressed="true">Mémoire flash</button>
+          <button id="tSD" aria-pressed="false">Carte SD</button>
+        </div>
+        <div class="row">
+          <button id="bRefresh" class="mini">Actualiser</button>
+          <button id="bMkdir" class="mini">Nouveau dossier</button>
+        </div>
+      </div>
+      <div class="meter" title="Occupation"><i id="fsMeter" style="width:0%"></i></div>
+      <div class="crumbs" id="crumbs"></div>
+      <div style="overflow-x: auto">
+        <table class="files">
+          <thead><tr><th>Nom</th><th style="text-align:right">Taille</th><th style="text-align:right">Actions</th></tr></thead>
+          <tbody id="fileRows"><tr><td colspan="3" class="empty">—</td></tr></tbody>
+        </table>
+      </div>
+      <div class="row">
+        <input type="file" id="upFiles" multiple aria-label="Fichiers à envoyer">
+        <button id="bUpload" class="solid">Envoyer ici</button>
+      </div>
+      <div class="prog" id="fsProg" aria-live="polite"></div>
+    </section>
+
+    <div class="side">
+      <section class="card">
+        <h2>Configuration <small id="cfgActive">—</small></h2>
+        <label class="rng"><span>Fichier de configuration (mémoire flash)</span>
+          <select id="cfgSel"></select></label>
+        <div class="row">
+          <button id="bCfgEdit">Modifier</button>
+          <button id="bCfgUse" class="solid">Activer et redémarrer</button>
+        </div>
+        <label class="rng"><span>Envoyer un nouveau fichier .yaml</span>
+          <input type="file" id="cfgFile" accept=".yaml,.yml,text/yaml"></label>
+        <div class="row">
+          <button id="bCfgUp">Envoyer</button>
+          <button id="bRestart" class="danger">Redémarrer le contrôleur</button>
+        </div>
+        <div class="prog" id="cfgProg" aria-live="polite"></div>
+      </section>
+
+      <section class="card">
+        <h2>Firmware</h2>
+        <label class="rng"><span>Fichier firmware.bin</span>
+          <input type="file" id="fwFile" accept=".bin"></label>
+        <button id="bFw" class="danger">Mettre à jour et redémarrer</button>
+        <div class="prog" id="fwProg" aria-live="polite"></div>
+      </section>
+
+      <section class="card">
+        <h2>Console <small>commandes FluidNC</small></h2>
+        <form class="console" id="cmdForm">
+          <input type="text" id="cmd" placeholder="$$, $I, $Sta/SSID=…" spellcheck="false" autocomplete="off" aria-label="Commande">
+          <button class="solid">Envoyer</button>
+        </form>
+        <ul class="log" id="log"></ul>
+      </section>
+    </div>
+  </div>
+  <p class="fine">Géométrie lue sur le contrôleur à la connexion ($/kinematics/SCARA/…). Les limites dessinées sont indicatives : le contrôleur reste seul juge. Page de secours intégrée au firmware : <a href="/?forcefallback=yes">/?forcefallback=yes</a>.</p>
+</div>
+
+<dialog id="ed">
+  <form method="dialog">
+    <h2><span id="edName">—</span><small id="edVol"></small></h2>
+    <textarea id="edText" spellcheck="false" aria-label="Contenu du fichier"></textarea>
+    <div class="row" style="justify-content: flex-end">
+      <span class="prog" id="edProg" style="margin-right:auto"></span>
+      <button value="cancel">Fermer</button>
+      <button id="edSave" class="solid" value="default">Enregistrer</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- machine, defaults from scara_dlc32_kinematics.yaml; overwritten from the controller ----
+  var C = {
+    arm1_mm: 1090, arm2_mm: 1050, j1_min_deg: 10, j1_max_deg: 180, j2_min_deg: -270, j2_max_deg: 180,
+    r_min_mm: 10, r_max_mm: 2500, elbow_positive: false, coupled_elbow: true,
+    z_min: 0, z_max: 120, s_max: 1000
+  };
+  // Lead of the jog stream, in seconds of travel. Longer = smoother at the
+  // joints' low acceleration; shorter = the head reacts faster to the finger.
+  var LOOKAHEAD_S = 0.8, POLL_MS = 200;
+
+  // ---- room, metres, x east from the west wall, y south from the north wall (as the implantation plan) ----
+  var RW = 3.99, RD = 2.92, BASE = { x: RW / 2, y: 0 }, FRAME = 180;
+  var VB = { x: -0.55, y: -0.55, w: 5.09, h: 3.72 };
+  var WALLS = [[[0, 0], [RW, 0]], [[RW, 0], [RW, 1.86]], [[RW, 2.62], [RW, RD]], [[0, RD], [RW, RD]], [[0, 0], [0, 1.34]], [[0, 1.90], [0, RD]]];
+  var WALL_RECTS = [[-0.12, -0.12, RW + 0.24, 0.12], [-0.12, RD, RW + 0.24, 0.12], [-0.12, 0, 0.12, 1.34], [-0.12, 1.90, 0.12, RD - 1.90], [RW, 0, 0.12, 1.86], [RW, 2.62, 0.12, RD - 2.62]];
+
+  var NS = "http://www.w3.org/2000/svg";
+  var $ = function (id) { return document.getElementById(id); };
+  var rad = function (d) { return d * Math.PI / 180; }, deg = function (r) { return r * 180 / Math.PI; };
+  var f1 = function (v) { return v == null || isNaN(v) ? "—" : v.toFixed(1); };
+  function el(tag, attrs, parent, text) {
+    var n = document.createElementNS(NS, tag);
+    for (var k in attrs) n.setAttribute(k, attrs[k]);
+    if (text !== undefined) n.textContent = text;
+    if (parent) parent.appendChild(n);
+    return n;
+  }
+  function h(tag, attrs, text) {
+    var n = document.createElement(tag);
+    for (var k in attrs || {}) { if (k === "onclick") n.onclick = attrs[k]; else n.setAttribute(k, attrs[k]); }
+    if (text !== undefined) n.textContent = text;
+    return n;
+  }
+  function clear(g) { while (g.firstChild) g.removeChild(g.firstChild); }
+  var svg = $("plan");
+
+  // Served by the controller: talk to it. Opened from disk: simulation, or
+  // ?host=<ip> to drive a real controller from a dev copy (WebSocket only:
+  // the file API is same-origin).
+  var params = new URLSearchParams(location.search);
+  var HOST = params.get("host") || (/^https?:$/.test(location.protocol) ? location.host : "");
+  var HTTP = params.get("host") ? "http://" + params.get("host") : "";
+
+  // ---------------------------------------------------------------- geometry
+  function toPlan(xmm, ymm) {
+    var th = rad(FRAME), x = xmm / 1000, y = ymm / 1000;
+    return [BASE.x + x * Math.cos(th) - y * Math.sin(th), BASE.y - (x * Math.sin(th) + y * Math.cos(th))];
+  }
+  function fromPlan(px, py) {
+    var th = rad(FRAME), u = px - BASE.x, v = -(py - BASE.y);
+    return { x: (u * Math.cos(th) + v * Math.sin(th)) * 1000, y: (-u * Math.sin(th) + v * Math.cos(th)) * 1000 };
+  }
+  // j1 absolute from +X, rel = elbow relative to arm1
+  function fk(j1, rel) {
+    var a1 = rad(j1), a2 = rad(j1 + rel);
+    var ex = C.arm1_mm * Math.cos(a1), ey = C.arm1_mm * Math.sin(a1);
+    var tx = ex + C.arm2_mm * Math.cos(a2), ty = ey + C.arm2_mm * Math.sin(a2);
+    return { j1: j1, rel: rel, x: tx, y: ty, base: [BASE.x, BASE.y], elbow: toPlan(ex, ey), tool: toPlan(tx, ty) };
+  }
+  // Elbow branch. Before homing it is the configured one; during homing the
+  // report carries motor angles, from which the real branch is read back.
+  var elbowSign = C.elbow_positive ? 1 : -1;
+  function ik(x, y) {
+    var L1 = C.arm1_mm, L2 = C.arm2_mm, r2 = x * x + y * y;
+    var c = (r2 - L1 * L1 - L2 * L2) / (2 * L1 * L2);
+    if (c > 1 || c < -1) return null;
+    var t2 = elbowSign * Math.acos(c);
+    var j1 = deg(Math.atan2(y, x) - Math.atan2(L2 * Math.sin(t2), L1 + L2 * Math.cos(t2)));
+    while (j1 < C.j1_min_deg) j1 += 360;
+    while (j1 >= C.j1_min_deg + 360) j1 -= 360;
+    return fk(j1, deg(t2));
+  }
+  function hit(p1, p2, p3, p4) {
+    var d = (p2[0] - p1[0]) * (p4[1] - p3[1]) - (p2[1] - p1[1]) * (p4[0] - p3[0]);
+    if (Math.abs(d) < 1e-12) return null;
+    var t = ((p3[0] - p1[0]) * (p4[1] - p3[1]) - (p3[1] - p1[1]) * (p4[0] - p3[0])) / d;
+    var u = ((p3[0] - p1[0]) * (p2[1] - p1[1]) - (p3[1] - p1[1]) * (p2[0] - p1[0])) / d;
+    return (t >= 0 && t <= 1 && u >= 0 && u <= 1) ? [p1[0] + t * (p2[0] - p1[0]), p1[1] + t * (p2[1] - p1[1])] : null;
+  }
+  function clash(p) {
+    var links = [[p.base, p.elbow], [p.elbow, p.tool]];
+    for (var i = 0; i < 2; i++) for (var w = 0; w < WALLS.length; w++) {
+      var q = hit(links[i][0], links[i][1], WALLS[w][0], WALLS[w][1]);
+      if (q && Math.hypot(q[0] - BASE.x, q[1] - BASE.y) > 0.05) return true;
+    }
+    return false;
+  }
+  function reach(x, y) {
+    var r = Math.hypot(x, y);
+    if (r < C.r_min_mm) return { ok: false, why: "near", r: r };
+    if (r > Math.min(C.r_max_mm, C.arm1_mm + C.arm2_mm)) return { ok: false, why: "far", r: r };
+    var p = ik(x, y);
+    if (!p) return { ok: false, why: "far", r: r };
+    if (p.j1 > C.j1_max_deg) return { ok: false, why: "angle", r: r };
+    if (p.rel < C.j2_min_deg || p.rel > C.j2_max_deg) return { ok: false, why: "angle", r: r };
+    if (clash(p)) return { ok: false, why: "wall", r: r, p: p };
+    return { ok: true, r: r, p: p };
+  }
+  var WHY = { near: "Trop près de l'axe (repli singulier)", far: "Hors de portée du bras", angle: "Hors des angles des articulations", wall: "Le bras toucherait un mur" };
+
+  // ---------------------------------------------------------------- drawing
+  function drawZone() {
+    var step = 0.025, W = Math.ceil(VB.w / step), H = Math.ceil(VB.h / step);
+    var cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+    var ctx = cv.getContext("2d"), img = ctx.createImageData(W, H), d = img.data;
+    for (var j = 0; j < H; j++) for (var i = 0; i < W; i++) {
+      var px = VB.x + (i + 0.5) * step, py = VB.y + (j + 0.5) * step;
+      if (px < 0 || px > RW || py < 0 || py > RD) continue;
+      var m = fromPlan(px, py), k = (j * W + i) * 4;
+      // in the dark room: a faint blue wash where the head can go, red where it cannot
+      if (reach(m.x, m.y).ok) { d[k] = 60; d[k + 1] = 110; d[k + 2] = 180; d[k + 3] = 70; }
+      else { d[k] = 198; d[k + 1] = 40; d[k + 2] = 40; d[k + 3] = 46; }
+    }
+    ctx.putImageData(img, 0, 0);
+    var z = $("zone");
+    z.setAttribute("x", VB.x); z.setAttribute("y", VB.y); z.setAttribute("width", W * step); z.setAttribute("height", H * step);
+    z.setAttribute("href", cv.toDataURL());
+  }
+  function drawStatic() {
+    var g = $("walls"), s = "font-size: 0.085px; fill: var(--muted); font-family: var(--f-display); letter-spacing: 0.01px";
+    var b = "font-size: 0.085px; fill: var(--ink); font-weight: 600; font-family: var(--f-display)";
+    WALL_RECTS.forEach(function (r) { el("rect", { x: r[0], y: r[1], width: r[2], height: r[3], style: "fill: url(#hatch); stroke: var(--ink); stroke-width: 0.014" }, g); });
+    el("text", { x: RW * 0.86, y: -0.2, "text-anchor": "middle", style: s }, g, "MUR NORD");
+    el("text", { x: -0.3, y: 1.66, "text-anchor": "middle", style: b }, g, "P1");
+    el("text", { x: RW + 0.3, y: 2.3, "text-anchor": "middle", style: b }, g, "P2");
+    el("rect", { x: BASE.x - 0.08, y: BASE.y - 0.08, width: 0.16, height: 0.16, style: "fill: #fff; stroke: var(--ink); stroke-width: 0.014" }, g);
+    el("path", { d: "M " + (BASE.x - 0.08) + " " + (BASE.y - 0.08) + " l 0.16 0.16 M " + (BASE.x + 0.08) + " " + (BASE.y - 0.08) + " l -0.16 0.16", style: "stroke: var(--ink); stroke-width: 0.008" }, g);
+  }
+  function drawArm(g, p, ghost, lit) {
+    clear(g);
+    if (!p) return;
+    if (ghost) {
+      el("polyline", { points: [p.base, p.elbow, p.tool].join(" "), style: "stroke: var(--arm1); stroke-width: 0.014; stroke-dasharray: 0.045 0.03; opacity: .55; fill: none" }, g);
+      el("circle", { cx: p.tool[0], cy: p.tool[1], r: 0.06, style: "fill: none; stroke: var(--arm1); stroke-width: 0.012; opacity: .8" }, g);
+      return;
+    }
+    el("line", { x1: p.base[0], y1: p.base[1], x2: p.elbow[0], y2: p.elbow[1], style: "stroke: var(--arm1); stroke-width: 0.05; stroke-linecap: round" }, g);
+    el("line", { x1: p.elbow[0], y1: p.elbow[1], x2: p.tool[0], y2: p.tool[1], style: "stroke: var(--arm2); stroke-width: 0.04; stroke-linecap: round" }, g);
+    el("circle", { cx: p.elbow[0], cy: p.elbow[1], r: 0.045, style: "fill: var(--floor); stroke: var(--arm1); stroke-width: 0.016" }, g);
+    el("circle", { cx: p.tool[0], cy: p.tool[1], r: 0.055, style: "fill: " + (lit ? "var(--lamp)" : "var(--floor)") + "; stroke: var(--arm1); stroke-width: 0.016" }, g);
+  }
+
+  // ---------------------------------------------------------------- live state
+  var S = {
+    link: null, mode: "off",          // off | live | sim
+    state: "", pos: null, wco: [0, 0, 0], pose: null,
+    pins: "", spindleOn: false, spindleS: 0,
+    pending: [], jogsInFlight: 0, cmd: null,
+    target: null, zTarget: null, dragging: false,
+    lampWant: null, lampDirty: false, cfgName: "",
+    // Homed: true / false / null = unknown. The status report does not say,
+    // so it is tracked: a completed $H sets it, a boot or a position-losing
+    // alarm clears it. Kept across page reloads; a controller reboot always
+    // shows up as Alarm on the first report, which clears it.
+    homed: null, firstStatus: false
+  };
+  try { var hs = localStorage.getItem("scara.homed"); S.homed = hs === "1" ? true : hs === "0" ? false : null; } catch (e) {}
+  function setHomed(v) {
+    if (S.homed === v) return;
+    S.homed = v;
+    try { localStorage.setItem("scara.homed", v ? "1" : "0"); } catch (e) {}
+  }
+  function homed() { return S.homed === true; }
+
+  function log(text, cls) {
+    var ul = $("log"), li = h("li", cls ? { class: cls } : {}, text);
+    var stick = ul.scrollTop + ul.clientHeight >= ul.scrollHeight - 4;
+    ul.appendChild(li);
+    while (ul.children.length > 300) ul.removeChild(ul.firstChild);
+    if (stick) ul.scrollTop = ul.scrollHeight;
+  }
+  function say(t) { $("msg").textContent = t; }
+
+  // ---- outgoing ----
+  // Realtime bytes go as a BINARY frame: as text, 0x85 would be UTF-8 encoded
+  // into two bytes and the controller would never see a jog cancel.
+  function rt(code) { if (S.link) S.link.send(new Uint8Array([code])); }
+  function line(text, kind) {
+    if (!S.link) return;
+    S.pending.push(kind || "cmd");
+    S.link.send(text + "\n");
+    if (kind !== "cfg") log("> " + text, "out");
+  }
+  function onAck(err) {
+    var kind = S.pending.shift();
+    if (kind === "jog") {
+      S.jogsInFlight = Math.max(0, S.jogsInFlight - 1);
+      if (err) { S.cmd = null; S.target = null; say("Déplacement refusé par le contrôleur (" + err + ")."); }
+    }
+  }
+
+  // ---- incoming ----
+  var KEYS = { arm1_mm: 1, arm2_mm: 1, j1_min_deg: 1, j1_max_deg: 1, j2_min_deg: 1, j2_max_deg: 1, r_min_mm: 1, r_max_mm: 1, elbow_positive: 1, coupled_elbow: 1 };
+  var cfgTimer = null;
+  function onLine(l) {
+    if (!l) return;
+    if (l[0] === "<") return onStatus(l);
+    if (l === "ok") return onAck(null);
+    if (l.indexOf("error:") === 0) { log(l, "err"); return onAck(l); }
+    if (l.indexOf("ALARM:") === 0) {
+      log(l, "err");
+      // hard limit, abort during motion, homing failures, unhomed: position lost
+      if ([1, 3, 6, 7, 8, 9, 14].indexOf(parseInt(l.slice(6), 10)) >= 0) setHomed(false);
+      say("Alarme " + l.slice(6) + " : refaites l'origine ($H).");
+      render();
+      return;
+    }
+    var m = l.match(/^\$\/kinematics\/SCARA\/(\w+)=(.*)$/);
+    if (m && KEYS[m[1]]) {
+      C[m[1]] = /^(true|false)$/.test(m[2]) ? m[2] === "true" : parseFloat(m[2]);
+      if (m[1] === "elbow_positive") elbowSign = C.elbow_positive ? 1 : -1;
+      clearTimeout(cfgTimer); cfgTimer = setTimeout(drawZone, 300);
+      return;
+    }
+    m = l.match(/^\$\/axes\/z\/(max_travel_mm|homing\/mpos_mm)=(.*)$/);
+    if (m) {
+      var v = parseFloat(m[2]);
+      if (m[1] === "max_travel_mm") C.z_max = C.z_min + v; else { var t = C.z_max - C.z_min; C.z_min = v; C.z_max = v + t; }
+      drawZTicks();
+      return;
+    }
+    m = l.match(/^\$Config\/Filename=(.*)$/);
+    if (m) { S.cfgName = m[1].trim(); $("cfgActive").textContent = "actif : " + S.cfgName; fillCfgSelect(); return; }
+    if (/^(CURRENT_ID|ACTIVE_ID|currentID|activeID|PING)/.test(l)) return;
+    log(l, /^\[MSG:(ERR|WARN)/.test(l) ? "err" : "");
+  }
+  function onStatus(l) {
+    var parts = l.slice(1, -1).split("|"), f = {}, prev = S.state;
+    S.state = parts[0].split(":")[0];
+    if (S.firstStatus) { S.firstStatus = false; if (S.state === "Alarm") setHomed(false); }
+    if (S.state === "Home" && prev !== "Home") setHomed(false);
+    if (prev === "Home" && S.state === "Idle") { setHomed(true); say("Origine faite : le bras peut être déplacé."); }
+    for (var i = 1; i < parts.length; i++) { var k = parts[i].indexOf(":"); f[parts[i].slice(0, k)] = parts[i].slice(k + 1); }
+    if (f.WCO) S.wco = f.WCO.split(",").map(Number);
+    var raw = (f.MPos || f.WPos || "").split(",").map(Number);
+    if (!f.MPos && f.WPos) raw = raw.map(function (v, i) { return v + (S.wco[i] || 0); });
+    if (raw.length >= 3) {
+      if (S.state === "Home") {
+        // Report.cpp: while homing MPos is MOTOR space, degrees on X and Y
+        var rel = C.coupled_elbow ? raw[1] - raw[0] : raw[1];
+        if (Math.abs(rel) > 1 && Math.abs(Math.abs(rel) - 180) > 1) elbowSign = rel > 0 ? 1 : -1;
+        S.pose = fk(raw[0], rel);
+        S.pos = { x: S.pose.x, y: S.pose.y, z: raw[2] };
+      } else {
+        S.pos = { x: raw[0], y: raw[1], z: raw[2] };
+        S.pose = ik(raw[0], raw[1]);
+      }
+    }
+    S.pins = f.Pn || "";
+    if (f.FS) S.spindleS = Number(f.FS.split(",")[1]) || 0;
+    // |A:| only rides along with |Ov:|, one report in 10 (Report.cpp, report_ovr_counter),
+    // and at once after any spindle change. Its absence means "off" only then.
+    if (f.Ov !== undefined) S.spindleOn = !!(f.A && /[SC]/.test(f.A));
+    render();
+  }
+
+  // ---------------------------------------------------------------- transport
+  var retry = null;
+  function attach(link, mode) {
+    detach();
+    S.link = link; S.mode = mode;
+    var buf = "", dec = new TextDecoder();
+    link.onmessage = function (e) {
+      buf += typeof e.data === "string" ? e.data : dec.decode(e.data, { stream: true });
+      var lines = buf.split("\n"); buf = lines.pop();
+      lines.forEach(function (x) { onLine(x.replace(/\r$/, "")); });
+    };
+    link.onopen = function () {
+      setConn(mode === "sim" ? "simulation" : "connecté · " + HOST, mode === "sim" ? "sim" : "on");
+      say(mode === "sim" ? "Simulation : aucun moteur ne bouge." : "Connecté. Faites l'origine ($H) si le bras est en alarme.");
+      S.pending = []; S.jogsInFlight = 0; S.cmd = null; S.target = null; S.firstStatus = true;
+      Object.keys(KEYS).forEach(function (k) { line("$/kinematics/SCARA/" + k, "cfg"); });
+      line("$/axes/z/homing/mpos_mm", "cfg"); line("$/axes/z/max_travel_mm", "cfg");
+      line("$Config/Filename", "cfg");
+      S.poll = setInterval(function () { rt(0x3f); }, POLL_MS);
+      S.tick = setInterval(follow, 60);
+      listFiles();
+    };
+    link.onclose = function () {
+      if (S.link !== link) return;
+      detach();
+      setConn("reconnexion…", "bad"); say("Connexion perdue, nouvelle tentative…");
+      if (mode === "live") retry = setTimeout(connect, 2000);
+    };
+    link.onerror = function () {};
+  }
+  function detach() {
+    clearInterval(S.poll); clearInterval(S.tick); clearTimeout(retry);
+    var l = S.link; S.link = null; S.mode = "off"; S.state = "";
+    if (l) { l.onclose = null; try { l.close(); } catch (e) {} }
+    render();
+  }
+  function setConn(t, cls) { $("connTxt").textContent = t; $("connDot").className = "dot " + (cls || ""); }
+  function connect() {
+    setConn("connexion…");
+    var ws;
+    try { ws = new WebSocket("ws://" + HOST + "/"); } catch (e) { setConn("adresse invalide", "bad"); return; }
+    ws.binaryType = "arraybuffer";
+    attach(ws, "live");
+  }
+
+  // ---------------------------------------------------------------- follow the finger
+  // Absolute jogs, one at a time, each at most one lookahead long, from the
+  // last commanded point towards the finger. The next is sent once the head
+  // has used most of the lead, so the planner always has motion queued but
+  // the arm never lags the finger by more than ~2 steps.
+  //
+  // Streaming only runs while the finger is down. Once released (or after a
+  // plain click, or a Z key press) the final point is sent ONCE and forgotten:
+  // the page never re-sends it, so it does not pull the arm back when another
+  // client (the camera tracker) moves it afterwards.
+  function follow() {
+    if (S.lampDirty) applyLamp();
+    if (!S.pos || !(S.target || S.zTarget != null)) return;
+    if (S.state !== "Idle" && S.state !== "Jog") return;
+    if (S.jogsInFlight > 0) return;
+    if (!S.dragging && !zDrag) { sendOnce(); return; }
+    // a status report taken just before the jog started still says Idle
+    if (S.state === "Idle" && Date.now() - (S.sentAt || 0) < 2 * POLL_MS + 100) return;
+    var cur = S.pos;
+    if (!S.cmd || S.state === "Idle") S.cmd = { x: cur.x, y: cur.y, z: cur.z };
+    var feed = Number($("rF").value), step = Math.max(15, feed / 60 * LOOKAHEAD_S);
+    if (Math.hypot(cur.x - S.cmd.x, cur.y - S.cmd.y, cur.z - S.cmd.z) > step * 0.6) return;
+    var tx = S.target ? S.target.x : S.cmd.x, ty = S.target ? S.target.y : S.cmd.y;
+    var tz = S.zTarget != null ? S.zTarget : S.cmd.z;
+    var dx = tx - S.cmd.x, dy = ty - S.cmd.y, dz = tz - S.cmd.z, L = Math.hypot(dx, dy, dz);
+    if (L < 0.5) return;  // caught up with the finger; it is still down
+    var k = Math.min(1, step / L), n = { x: S.cmd.x + dx * k, y: S.cmd.y + dy * k, z: S.cmd.z + dz * k };
+    if (!reach(n.x, n.y).ok) { say("Trajet bloqué : la ligne droite passe hors de la zone. Contournez."); S.target = null; S.zTarget = null; render(); return; }
+    S.jogsInFlight++;
+    S.cmd = n; S.sentAt = Date.now();
+    line("$J=G90 G21 X" + n.x.toFixed(2) + " Y" + n.y.toFixed(2) + " Z" + n.z.toFixed(2) + " F" + feed, "jog");
+  }
+
+  // One absolute jog to the target, then the target is dropped. Only the axes
+  // that were asked for are sent, so a Z change does not also pin X/Y.
+  function sendOnce() {
+    var cur = S.pos, from = S.cmd || cur, t = S.target, tz = S.zTarget;
+    S.target = null; S.zTarget = null; S.cmd = null;
+    var words = "";
+    if (t && Math.hypot(t.x - from.x, t.y - from.y) >= 0.5) {
+      // the straight line must stay inside the zone, as the streamed steps were checked
+      var L = Math.hypot(t.x - cur.x, t.y - cur.y), n = Math.max(1, Math.ceil(L / 10));
+      for (var i = 1; i <= n; i++) {
+        if (!reach(cur.x + (t.x - cur.x) * i / n, cur.y + (t.y - cur.y) * i / n).ok) {
+          say("Trajet bloqué : la ligne droite passe hors de la zone. Contournez."); render(); return;
+        }
+      }
+      words += " X" + t.x.toFixed(2) + " Y" + t.y.toFixed(2);
+    }
+    if (tz != null && Math.abs(tz - from.z) >= 0.5) words += " Z" + tz.toFixed(2);
+    render();
+    if (!words) return;
+    S.jogsInFlight++; S.sentAt = Date.now();
+    line("$J=G90 G21" + words + " F" + Number($("rF").value), "jog");
+  }
+
+  function canMove() { return !!S.link && homed() && (S.state === "Idle" || S.state === "Jog"); }
+  function busy() { return /^(Jog|Run|Home|Hold)$/.test(S.state); }
+  function pt(e) { var p = svg.createSVGPoint(); p.x = e.clientX; p.y = e.clientY; return p.matrixTransform(svg.getScreenCTM().inverse()); }
+  function aim(e, drive) {
+    var p = pt(e), m = fromPlan(p.x, p.y), r = reach(m.x, m.y), g = $("cursor");
+    clear(g);
+    el("circle", { cx: p.x, cy: p.y, r: 0.07, style: "fill: none; stroke-width: 0.016; stroke: " + (r.ok ? "#7fb0e8" : "#ff6b6b") }, g);
+    $("reach").textContent = (r.ok ? "accessible" : WHY[r.why]) + " · r " + (r.r / 1000).toFixed(2) + " m";
+    if (drive && r.ok && canMove()) { S.target = { x: m.x, y: m.y }; render(); }
+  }
+  function whyNot() {
+    return !S.link ? "Pas de connexion." : !homed() ? "Position inconnue : faites l'origine ($H) avant de déplacer le bras." : "Le bras doit être au repos (Idle) : déverrouillez ou attendez la fin du mouvement.";
+  }
+  svg.addEventListener("pointerdown", function (e) {
+    if (e.target.closest && e.target.closest("#homeBtn")) return;
+    if (!canMove()) { say(whyNot()); return; }
+    S.dragging = true; try { svg.setPointerCapture(e.pointerId); } catch (x) {}
+    aim(e, true);
+  });
+  svg.addEventListener("pointermove", function (e) { aim(e, S.dragging); });
+  function release() { S.dragging = false; }
+  svg.addEventListener("pointerup", release);
+  svg.addEventListener("pointercancel", release);
+  svg.addEventListener("pointerleave", function () { if (!S.dragging) { clear($("cursor")); $("reach").textContent = ""; } });
+
+  // ---------------------------------------------------------------- light
+  // The head light is wired as the spindle (PWM): M3 S<n> sets it, M5 turns it
+  // off. The controller refuses G-code in Alarm and while jogging
+  // (ProcessSettings.cpp, SystemGcLock), so:
+  //   Idle   -> sent at once
+  //   Jog    -> sent as soon as the arm stops
+  //   Alarm  -> "off" is done by a soft reset, which stops the spindle
+  //             (Protocol.cpp, protocol_do_late_reset); "on" is not possible.
+  function applyLamp() {
+    if (!S.lampWant || !S.link) return;
+    var w = S.lampWant, off = !(w.on && w.pct > 0);
+    if (/Alarm/.test(S.state)) {
+      S.lampWant = null; S.lampDirty = false;
+      if (off) { rt(0x18); log("> [réinitialisation : extinction en alarme]", "out"); say("Lumière éteinte par réinitialisation (le contrôleur refuse M5 en alarme)."); }
+      else say("Impossible d'allumer en alarme : faites l'origine ou déverrouillez d'abord.");
+      render(); return;
+    }
+    if (S.state !== "Idle" || S.jogsInFlight || (S.target && !off)) { S.lampDirty = true; render(); return; }
+    S.lampDirty = false;
+    line(off ? "M5" : "M3 S" + Math.round(w.pct / 100 * C.s_max), "lamp");
+    S.lampWant = null; render();
+  }
+  function wantLamp(on) { S.lampWant = { on: on, pct: Number($("rPct").value) }; applyLamp(); }
+  $("bLampOn").onclick = function () { wantLamp(true); };
+  $("bLampOff").onclick = function () { wantLamp(false); };
+  $("rPct").oninput = function () { $("oPct").textContent = this.value + " %"; };
+  $("rPct").onchange = function () { if (S.spindleOn) wantLamp(true); };
+
+  // ---------------------------------------------------------------- machine controls
+  $("bSim").onclick = function () { attach(new Sim(), "sim"); };
+  $("bStop").onclick = function () {
+    S.target = null; S.zTarget = null; S.dragging = false; S.cmd = null;
+    rt(0x85);                        // jog cancel: decelerates and flushes the jog queue
+    if (S.state === "Run") rt(0x21); // a running program: feed hold
+    say("Arrêt demandé.");
+  };
+  $("bHome").onclick = function () { S.target = null; line("$H"); };
+  $("bUnlock").onclick = function () { line("$X"); };
+  $("bReset").onclick = function () { S.target = null; S.pending = []; S.jogsInFlight = 0; rt(0x18); };
+  $("rF").oninput = function () { $("oF").textContent = this.value + " mm/min"; };
+
+  // ---- Z rail: drag (live, like the plan) or arrow keys ----
+  var zT = $("zTrack"), zDrag = false;
+  function zPlace(node, v) {
+    var f = Math.max(0, Math.min(1, (v - C.z_min) / ((C.z_max - C.z_min) || 1)));
+    node.style.top = "calc(8px + " + ((1 - f) * 100).toFixed(2) + "% - " + ((1 - f) * 16).toFixed(1) + "px)";
+  }
+  function drawZTicks() {
+    var g = $("zTicks"), span = C.z_max - C.z_min, step = [1, 2, 5, 10, 20, 25, 50, 100, 200, 500].filter(function (s) { return span / s <= 7; })[0] || 1000;
+    clear(g);
+    for (var v = Math.ceil(C.z_min / step) * step; v <= C.z_max + 1e-6; v += step) {
+      var t = h("i", { class: "ztick" }); t.appendChild(h("span", {}, String(Math.round(v)))); zPlace(t, v); g.appendChild(t);
+    }
+    zT.setAttribute("aria-valuemin", C.z_min); zT.setAttribute("aria-valuemax", C.z_max);
+  }
+  function zFromEvent(e) {
+    var r = zT.getBoundingClientRect(), f = 1 - (e.clientY - r.top - 8) / Math.max(1, r.height - 16);
+    return C.z_min + Math.max(0, Math.min(1, f)) * (C.z_max - C.z_min);
+  }
+  function zSet(v) { S.zTarget = Math.round(Math.max(C.z_min, Math.min(C.z_max, v))); render(); }
+  zT.addEventListener("pointerdown", function (e) {
+    if (!canMove()) { say(whyNot()); return; }
+    zDrag = true; try { zT.setPointerCapture(e.pointerId); } catch (x) {}
+    zSet(zFromEvent(e));
+  });
+  zT.addEventListener("pointermove", function (e) { if (zDrag) zSet(zFromEvent(e)); });
+  zT.addEventListener("pointerup", function () { zDrag = false; });
+  zT.addEventListener("pointercancel", function () { zDrag = false; });
+  zT.addEventListener("keydown", function (e) {
+    var d = { ArrowUp: 1, ArrowRight: 1, ArrowDown: -1, ArrowLeft: -1, PageUp: 10, PageDown: -10 }[e.key];
+    if (!d && e.key !== "Home" && e.key !== "End") return;
+    e.preventDefault();
+    if (!canMove() || !S.pos) { say(whyNot()); return; }
+    var base = S.zTarget != null ? S.zTarget : Math.round(S.pos.z);
+    zSet(e.key === "Home" ? C.z_min : e.key === "End" ? C.z_max : base + d * (e.shiftKey ? 10 : 1));
+  });
+  $("cmdForm").onsubmit = function (e) {
+    e.preventDefault();
+    var c = $("cmd").value.trim();
+    if (!c || !S.link) return;
+    if (c === "?" || c === "!" || c === "~") rt(c.charCodeAt(0)); else line(c);
+    $("cmd").value = "";
+  };
+
+  // ---------------------------------------------------------------- files
+  // Same HTTP API as WebUI v2: /files = flash, /upload = SD card.
+  //   GET  ?path=dir                                  -> JSON listing
+  //   GET  ?path=dir&action=delete|deletedir|createdir|rename&filename=x[&newname=y]
+  //   POST multipart: path, "<dir>/<name>S" = size, myfile[] named "<dir>/<name>"
+  // Download and read through WebDAV: GET /flash/<path>, /sd/<path>.
+  var FS = { vol: "flash", path: "", list: [], flashRoot: [] };
+  var EP = { flash: "/files", sd: "/upload" };
+  var TEXT = /\.(ya?ml|txt|nc|gcode|ngc|g|gc|json|cfg|ini|md|csv|htm|html)$/i, GCODE = /\.(nc|gcode|ngc|g|gc|tap)$/i;
+  function join() { return Array.prototype.filter.call(arguments, Boolean).join("/"); }
+  function human(n) { return n < 0 ? "dossier" : n < 1024 ? n + " o" : n < 1048576 ? (n / 1024).toFixed(1) + " Ko" : (n / 1048576).toFixed(2) + " Mo"; }
+
+  function api(vol, query) {
+    if (S.mode === "sim") return Promise.resolve(simFs(vol, query));
+    var q = new URLSearchParams(query).toString();
+    return fetch(HTTP + EP[vol] + "?" + q, { cache: "no-store" }).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    });
+  }
+  function upload(vol, dir, file, name, progEl) {
+    name = name || file.name;
+    var full = "/" + join(dir, name);
+    if (S.mode === "sim") return Promise.resolve(file.text ? file.text() : "").then(function (t) { simPut(vol, full, t, file.size); return simFs(vol, { path: dir }); });
+    return new Promise(function (ok, ko) {
+      var fd = new FormData();
+      fd.append("path", "/" + dir);
+      fd.append(full + "S", file.size);
+      fd.append("myfile[]", file, full);
+      var x = new XMLHttpRequest();
+      x.open("POST", HTTP + EP[vol]);
+      x.upload.onprogress = function (e) { if (progEl && e.lengthComputable) progEl.textContent = name + " · " + Math.round(e.loaded / e.total * 100) + " %"; };
+      x.onload = function () {
+        var j = null; try { j = JSON.parse(x.responseText); } catch (e) {}
+        if (x.status !== 200 || (j && /fail|reject|error/i.test(j.status))) ko(new Error((j && j.status) || "HTTP " + x.status)); else ok(j);
+      };
+      x.onerror = function () { ko(new Error("réseau")); };
+      x.send(fd);
+    });
+  }
+  function readText(vol, path) {
+    if (S.mode === "sim") return Promise.resolve(simGet(vol, "/" + path));
+    return fetch(HTTP + "/" + vol + "/" + path.split("/").map(encodeURIComponent).join("/"), { cache: "no-store" }).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.text();
+    });
+  }
+  function showList(j) {
+    var prog = $("fsProg");
+    if (!j) return;
+    if (j.status && /no sd/i.test(j.status)) { FS.list = []; drawFiles("Pas de carte SD lisible."); $("fsUsage").textContent = "—"; $("fsMeter").style.width = "0%"; return; }
+    FS.list = (j.files || []).slice().sort(function (a, b) { return (b.size < 0) - (a.size < 0) || a.name.localeCompare(b.name); });
+    if (FS.vol === "flash" && !FS.path) { FS.flashRoot = FS.list; fillCfgSelect(); }
+    $("fsUsage").textContent = (j.used || "?") + " / " + (j.total || "?") + " · " + (j.occupation != null ? j.occupation : "?") + " %";
+    $("fsMeter").style.width = (Number(j.occupation) || 0) + "%";
+    if (j.status && j.status !== "Ok") prog.textContent = j.status;
+    drawFiles();
+  }
+  function listFiles(query) {
+    var q = Object.assign({ path: "/" + FS.path }, query || {});
+    return api(FS.vol, q).then(showList).catch(function (e) { drawFiles("Lecture impossible (" + e.message + ")."); });
+  }
+  function go(path) { FS.path = path; listFiles(); }
+  function drawFiles(note) {
+    var cr = $("crumbs"), tb = $("fileRows");
+    clear(cr); clear(tb);
+    var parts = FS.path ? FS.path.split("/") : [];
+    var root = h("a", { onclick: function () { go(""); } }, FS.vol === "flash" ? "flash" : "sd");
+    cr.appendChild(root);
+    parts.forEach(function (p, i) {
+      cr.appendChild(document.createTextNode(" / "));
+      cr.appendChild(h("a", { onclick: function () { go(parts.slice(0, i + 1).join("/")); } }, p));
+    });
+    if (note || !FS.list.length) { var tr = h("tr"), td = h("td", { colspan: 3, class: "empty" }, note || "Dossier vide."); tr.appendChild(td); tb.appendChild(tr); return; }
+    FS.list.forEach(function (f) {
+      var tr = h("tr"), dir = f.size < 0, full = join(FS.path, f.name);
+      var n = h("td", { class: "n" });
+      if (dir) n.appendChild(h("a", { onclick: function () { go(full); } }, f.name + "/"));
+      else n.textContent = f.name;
+      var a = h("td", { class: "a" });
+      if (!dir) {
+        if (TEXT.test(f.name) && f.size < 200000) a.appendChild(h("button", { class: "mini", onclick: function () { edit(FS.vol, full); } }, "Modifier"));
+        if (GCODE.test(f.name)) a.appendChild(h("button", { class: "mini", onclick: function () { runFile(FS.vol, full); } }, "Exécuter"));
+        if (S.mode !== "sim") a.appendChild(h("a", { class: "btn mini", href: HTTP + "/" + FS.vol + "/" + full.split("/").map(encodeURIComponent).join("/"), download: f.name }, "Télécharger"));
+      }
+      a.appendChild(h("button", { class: "mini", onclick: function () {
+        var nn = prompt("Nouveau nom pour " + f.name, f.name);
+        if (nn && nn !== f.name) listFiles({ action: "rename", filename: f.name, newname: nn });
+      } }, "Renommer"));
+      a.appendChild(h("button", { class: "mini danger", onclick: function () {
+        if (FS.vol === "flash" && !FS.path && (f.name === S.cfgName || f.name === "index.html.gz") &&
+            !confirm(f.name + " est indispensable au contrôleur. Le supprimer quand même ?")) return;
+        if (!confirm("Supprimer " + f.name + (dir ? " et tout son contenu" : "") + " ?")) return;
+        listFiles({ action: dir ? "deletedir" : "delete", filename: f.name });
+      } }, "Supprimer"));
+      tr.appendChild(n); tr.appendChild(h("td", { class: "s" }, human(f.size))); tr.appendChild(a);
+      tb.appendChild(tr);
+    });
+  }
+  function setVol(v) {
+    FS.vol = v; FS.path = "";
+    $("tFlash").setAttribute("aria-pressed", v === "flash"); $("tSD").setAttribute("aria-pressed", v === "sd");
+    listFiles();
+  }
+  $("tFlash").onclick = function () { setVol("flash"); };
+  $("tSD").onclick = function () { setVol("sd"); };
+  $("bRefresh").onclick = function () { listFiles(); };
+  $("bMkdir").onclick = function () { var n = prompt("Nom du dossier"); if (n) listFiles({ action: "createdir", filename: n }); };
+  $("bUpload").onclick = function () {
+    var files = Array.prototype.slice.call($("upFiles").files), prog = $("fsProg");
+    if (!files.length) { prog.textContent = "Choisissez d'abord un ou plusieurs fichiers."; return; }
+    var vol = FS.vol, dir = FS.path;
+    files.reduce(function (p, f) { return p.then(function () { return upload(vol, dir, f, null, prog); }); }, Promise.resolve())
+      .then(function () { prog.textContent = files.length + " fichier(s) envoyé(s)."; $("upFiles").value = ""; listFiles(); })
+      .catch(function (e) { prog.textContent = "Échec de l'envoi : " + e.message; listFiles(); });
+  };
+  function runFile(vol, path) {
+    if (busy()) { alert("Le bras est en mouvement."); return; }
+    if (!confirm("Exécuter " + path + " ? Le bras va suivre ce programme.")) return;
+    line((vol === "sd" ? "$SD/Run=/" : "$LocalFS/Run=/") + path);
+  }
+
+  // ---- editor ----
+  var edCur = null;
+  function edit(vol, path) {
+    edCur = { vol: vol, path: path };
+    $("edName").textContent = path.split("/").pop(); $("edVol").textContent = vol + " / " + path;
+    $("edText").value = "Chargement…"; $("edProg").textContent = "";
+    $("ed").showModal();
+    readText(vol, path).then(function (t) { $("edText").value = t; }).catch(function (e) { $("edText").value = ""; $("edProg").textContent = "Lecture impossible : " + e.message; });
+  }
+  $("edSave").onclick = function (e) {
+    e.preventDefault();
+    var parts = edCur.path.split("/"), name = parts.pop(), dir = parts.join("/");
+    var blob = new Blob([$("edText").value], { type: "text/plain" });
+    $("edProg").textContent = "Enregistrement…";
+    upload(edCur.vol, dir, blob, name, $("edProg")).then(function () {
+      $("edProg").textContent = "Enregistré." + (edCur.vol === "flash" && name === S.cfgName ? " Redémarrez pour appliquer la configuration." : "");
+      if (FS.vol === edCur.vol && FS.path === dir) listFiles();
+    }).catch(function (x) { $("edProg").textContent = "Échec : " + x.message; });
+  };
+
+  // ---- configuration ----
+  function fillCfgSelect() {
+    var sel = $("cfgSel"), keep = sel.value;
+    clear(sel);
+    var ys = FS.flashRoot.filter(function (f) { return f.size >= 0 && /\.ya?ml$/i.test(f.name); });
+    ys.forEach(function (f) { var o = h("option", { value: f.name }, f.name + (f.name === S.cfgName ? "  (actif)" : "")); sel.appendChild(o); });
+    if (!ys.length) sel.appendChild(h("option", { value: "" }, "aucun fichier .yaml"));
+    sel.value = keep && ys.some(function (f) { return f.name === keep; }) ? keep : S.cfgName;
+  }
+  function refreshFlashRoot() {
+    return api("flash", { path: "/" }).then(function (j) {
+      FS.flashRoot = (j.files || []); fillCfgSelect();
+      if (FS.vol === "flash" && !FS.path) showList(j);
+    });
+  }
+  $("bCfgEdit").onclick = function () { if ($("cfgSel").value) edit("flash", $("cfgSel").value); };
+  $("bCfgUp").onclick = function () {
+    var f = $("cfgFile").files[0], prog = $("cfgProg");
+    if (!f) { prog.textContent = "Choisissez un fichier .yaml."; return; }
+    if (FS.flashRoot.some(function (x) { return x.name === f.name; }) && !confirm(f.name + " existe déjà sur le contrôleur. Le remplacer ?")) return;
+    upload("flash", "", f, null, prog).then(function () {
+      prog.textContent = f.name + " envoyé. Sélectionnez-le puis « Activer et redémarrer ».";
+      $("cfgFile").value = "";
+      return refreshFlashRoot().then(function () { $("cfgSel").value = f.name; });
+    }).catch(function (e) { prog.textContent = "Échec de l'envoi : " + e.message; });
+  };
+  function restart(why) {
+    if (busy()) { alert("Le bras est en mouvement : arrêtez-le d'abord."); return false; }
+    $("cfgProg").textContent = why + " Redémarrage…";
+    line("$Bye");
+    return true;
+  }
+  $("bCfgUse").onclick = function () {
+    var n = $("cfgSel").value;
+    if (!n) return;
+    if (!confirm("Utiliser " + n + " comme configuration et redémarrer le contrôleur ?\nUne configuration erronée met la machine en alarme de configuration : elle reste joignable ici pour corriger.")) return;
+    if (busy()) { alert("Le bras est en mouvement : arrêtez-le d'abord."); return; }
+    line("$Config/Filename=" + n);
+    restart(n + " activé.");
+  };
+  $("bRestart").onclick = function () { if (confirm("Redémarrer le contrôleur ?")) restart(""); };
+
+  // ---- firmware ----
+  $("bFw").onclick = function () {
+    var f = $("fwFile").files[0], prog = $("fwProg");
+    if (!f) { prog.textContent = "Choisissez un fichier firmware.bin."; return; }
+    if (busy()) { alert("Le bras est en mouvement : arrêtez-le d'abord."); return; }
+    if (!confirm("Flasher " + f.name + " (" + human(f.size) + ") ? Le contrôleur redémarre à la fin.")) return;
+    if (S.mode === "sim") { prog.textContent = "Simulation : rien n'est flashé."; return; }
+    var fd = new FormData();
+    fd.append("/" + f.name + "S", f.size);
+    fd.append("myfile[]", f, "/" + f.name);
+    var x = new XMLHttpRequest();
+    x.open("POST", HTTP + "/updatefw");
+    x.upload.onprogress = function (e) { if (e.lengthComputable) prog.textContent = "Envoi " + Math.round(e.loaded / e.total * 100) + " %"; };
+    x.onload = function () {
+      var j = null; try { j = JSON.parse(x.responseText); } catch (e) {}
+      // status is UploadStatus as a number: 3 = successful
+      prog.textContent = j && String(j.status) === "3" ? "Firmware installé, redémarrage…" : "Échec de la mise à jour (" + (j ? j.status : x.status) + ").";
+    };
+    x.onerror = function () { prog.textContent = "Erreur réseau pendant l'envoi."; };
+    x.send(fd);
+  };
+
+  // ---------------------------------------------------------------- render
+  var STATE_FR = { Idle: "Repos", Jog: "Mouvement", Run: "Programme", Home: "Origine…", Alarm: "Alarme", Hold: "Pause", Door: "Porte", Check: "Vérif.", Sleep: "Veille", ConfigAlarm: "Erreur config" };
+  function render() {
+    var on = !!S.link, st = S.state, known = on && homed(), p = known ? S.pos : null, pose = known && st !== "Home" ? S.pose : null;
+    $("stTxt").textContent = on ? (STATE_FR[st] || st || "…") : "Hors ligne";
+    $("stDot").className = "dot " + (!on ? "" : /Alarm/.test(st) ? "bad" : st === "Idle" ? "on" : "sim");
+    $("fX").textContent = p ? f1(p.x) : "—"; $("fY").textContent = p ? f1(p.y) : "—"; $("fZ").textContent = p ? f1(p.z) : "—";
+    $("fR").textContent = p ? f1(Math.hypot(p.x, p.y)) : "—";
+    $("fJ1").textContent = pose ? f1(pose.j1) : "—"; $("fJ2").textContent = pose ? f1(pose.rel) : "—";
+
+    $("bStop").disabled = !on;
+    $("bHome").disabled = !on || busy();
+    $("bUnlock").disabled = !on || st !== "Alarm";
+    $("bReset").disabled = !on;
+    $("bLampOn").disabled = !on || /Alarm/.test(st);
+    $("bLampOff").disabled = !on;
+    zT.classList.toggle("off", !canMove()); zT.setAttribute("aria-disabled", !canMove());
+    $("bCfgUse").disabled = $("bRestart").disabled = $("bFw").disabled = !on || busy();
+    svg.classList.toggle("off", !canMove());
+
+    "XYZP".split("").forEach(function (c) {
+      var li = $("pn" + c), hitp = on && S.pins.indexOf(c) >= 0;
+      li.classList.toggle("hit", hitp); li.querySelector("b").textContent = hitp ? "déclenché" : "libre";
+    });
+
+    var pct = C.s_max ? Math.round(S.spindleS / C.s_max * 100) : 0, lit = on && S.spindleOn && S.spindleS > 0;
+    $("lampPct").textContent = on ? (lit ? pct + " %" : "éteinte") : "—";
+    $("lampS").textContent = on ? "S " + S.spindleS + " / " + C.s_max : "S —";
+    $("lampState").textContent = !on ? "—" : S.lampDirty ? "à l'arrêt du bras" : lit ? "allumée" : "éteinte";
+    $("bulb").style.opacity = lit ? (0.25 + 0.75 * pct / 100).toFixed(2) : 0;
+
+    $("zNow").style.display = $("zThumb").style.display = p ? "" : "none";
+    if (p) {
+      var zt = S.zTarget != null ? S.zTarget : p.z;
+      zPlace($("zNow"), p.z); zPlace($("zThumb"), zt);
+      zT.setAttribute("aria-valuenow", Math.round(zt));
+      $("oZ").innerHTML = "<b>" + Math.round(p.z) + "</b>" + (S.zTarget != null && Math.abs(S.zTarget - p.z) >= 1 ? "→ " + S.zTarget : "mm");
+    } else $("oZ").innerHTML = "<b>—</b>mm";
+    drawArm($("arm"), pose, false, lit);
+    drawUnknown(on && !known, st);
+    var g = $("glowC");
+    if (pose && lit) { g.setAttribute("cx", pose.tool[0]); g.setAttribute("cy", pose.tool[1]); g.setAttribute("opacity", (0.3 + 0.7 * pct / 100).toFixed(2)); }
+    else g.setAttribute("opacity", 0);
+    drawArm($("target"), known && S.target ? (reach(S.target.x, S.target.y).p || null) : null, true);
+  }
+
+  // Not homed: the reported position means nothing, so no arm is drawn.
+  var unknownShown = "";
+  function drawUnknown(show, st) {
+    var key = show ? (st === "Home" ? "home" : "unknown") : "";
+    if (key === unknownShown) return;
+    unknownShown = key;
+    var g = $("unknown"), cx = RW / 2, cy = RD / 2, F = "font-family: var(--f-display); fill: #fff; text-anchor: middle";
+    clear(g);
+    if (!show) return;
+    el("rect", { x: 0, y: 0, width: RW, height: RD, style: "fill: rgba(0,0,0,.62)" }, g);
+    el("text", { x: cx, y: cy - 0.18, style: F + "; font-size: 0.17px; font-weight: 600; letter-spacing: 0.01px" }, g,
+       key === "home" ? "HOMING…" : "LOCATION UNKNOWN — PLEASE HOME");
+    el("text", { x: cx, y: cy - 0.02, style: F + "; font-size: 0.085px; opacity: .8" }, g,
+       key === "home" ? "Origine en cours : le bras cherche ses capteurs." : "Position inconnue : le bras ne peut pas être déplacé avant l'origine.");
+    if (key === "home") return;
+    var b = el("g", { id: "homeBtn", style: "cursor: pointer", role: "button", tabindex: "0", "aria-label": "Lancer l'origine" }, g);
+    el("rect", { x: cx - 0.5, y: cy + 0.12, width: 1.0, height: 0.26, style: "fill: #fff; stroke: #fff; stroke-width: 0.01" }, b);
+    el("text", { x: cx, y: cy + 0.295, style: "font-family: var(--f-mono); font-size: 0.1px; font-weight: 600; fill: var(--ink); text-anchor: middle" }, b, "ORIGINE $H");
+    var go = function () { if (S.link && !busy()) { S.target = null; line("$H"); } };
+    b.addEventListener("click", go);
+    b.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+  }
+
+  // ---------------------------------------------------------------- simulator
+  // Enough of a FluidNC to try the page from disk: homing, jogs at the
+  // requested tool speed, jog cancel, the light, limit pins while homing, and
+  // an in-memory file system behind the same calls as /files and /upload.
+  var SIMFS = { "flash:/config.yaml": { t: "board: MKS-DLC32\nname: SCARA coupled + Z\n" }, "flash:/index.html.gz": { size: 12700 }, "sd:/jobs": { dir: true }, "sd:/jobs/test.g": { t: "G0 X-900 Y1300\nG0 X-700 Y1500\n" } };
+  function simPut(vol, path, t, size) { SIMFS[vol + ":" + path] = { t: t, size: size }; }
+  function simGet(vol, path) { var f = SIMFS[vol + ":" + path]; return f ? f.t || "" : ""; }
+  function simFs(vol, q) {
+    var dir = (q.path || "/").replace(/\/+$/, ""), pre = vol + ":" + dir + "/", st = "Ok";
+    if (q.action) {
+      var key = pre + q.filename;
+      if (q.action === "createdir") SIMFS[key] = { dir: true };
+      else if (q.action === "rename") { SIMFS[pre + q.newname] = SIMFS[key]; delete SIMFS[key]; }
+      else Object.keys(SIMFS).forEach(function (k) { if (k === key || k.indexOf(key + "/") === 0) delete SIMFS[k]; });
+      st = q.filename + " " + q.action;
+    }
+    var files = [], used = 0;
+    Object.keys(SIMFS).forEach(function (k) {
+      var f = SIMFS[k], sz = f.dir ? -1 : (f.size != null ? f.size : (f.t || "").length);
+      if (k.indexOf(vol + ":") === 0 && sz > 0) used += sz;
+      if (k.indexOf(pre) === 0 && k.slice(pre.length).indexOf("/") < 0) files.push({ name: k.slice(pre.length), size: sz });
+    });
+    var total = vol === "flash" ? 196608 : 8e9;
+    return { files: files, path: dir || "/", total: human(total), used: human(used), occupation: Math.round(used / total * 100), status: st };
+  }
+  function Sim() {
+    var self = this, q = [], ovr = 0;
+    var home = fk(175, -90), m = { st: "Alarm", x: home.x, y: home.y, z: 0, on: false, s: 0, pn: "", homeT: 0 };
+    function out(s) { setTimeout(function () { if (self.onmessage) self.onmessage({ data: s + "\n" }); }, 5); }
+    function status() {
+      // like the firmware: in Home state the report is motor space (deg, deg, mm)
+      var v = [m.x, m.y, m.z];
+      if (m.st === "Home") { var a = ik(m.x, m.y) || fk(175, -90); v = [a.j1, C.coupled_elbow ? a.j1 + a.rel : a.rel, m.z]; }
+      // |Ov:| and |A:| only one report in 10, or right after a spindle change
+      var ov = "";
+      if (ovr-- <= 0) { ovr = 9; ov = "|Ov:100,100,100" + (m.on ? "|A:S" : ""); }
+      out("<" + m.st + "|MPos:" + v.map(function (x) { return x.toFixed(3); }).join(",") + "|FS:0," + (m.on ? m.s : 0) + (m.pn ? "|Pn:" + m.pn : "") + ov + ">");
+    }
+    this.send = function (d) {
+      if (d instanceof Uint8Array) {
+        var c = d[0];
+        if (c === 0x3f) status();
+        else if (c === 0x85) { q = []; if (m.st === "Jog") m.st = "Idle"; }
+        else if (c === 0x18) { q = []; m.on = false; ovr = 0; if (m.st === "Jog") m.st = "Idle"; out("Grbl 4.0 [FluidNC simulation]"); }
+        return;
+      }
+      var l = d.trim(), mm;
+      if ((mm = l.match(/^\$\/kinematics\/SCARA\/(\w+)$/))) { out(l + "=" + C[mm[1]]); return out("ok"); }
+      if ((mm = l.match(/^\$\/axes\/z\/(.*)$/))) { out(l + "=" + (mm[1] === "max_travel_mm" ? "120.000" : "0.000")); return out("ok"); }
+      if (l === "$Config/Filename") { out("$Config/Filename=" + (m.cfg || "config.yaml")); return out("ok"); }
+      if ((mm = l.match(/^\$Config\/Filename=(.*)$/))) { m.cfg = mm[1]; return out("ok"); }
+      if (l === "$Bye") { out("[MSG:INFO: Restarting]"); setTimeout(function () { m.st = "Alarm"; q = []; m.on = false; out("Grbl 4.0 [FluidNC simulation]"); out("ALARM:14"); }, 800); return; }
+      if (l === "$H") { m.st = "Home"; m.homeT = 0; q = []; return; }
+      if (l === "$X") { if (m.st === "Alarm") { m.st = "Idle"; out("[MSG:INFO: Caution: Unlocked]"); } return out("ok"); }
+      if (l.indexOf("$J=") === 0) {
+        if (m.st !== "Idle" && m.st !== "Jog") return out("error:9");
+        var g = function (k) { var r = l.match(new RegExp(k + "(-?[\\d.]+)")); return r ? parseFloat(r[1]) : null; };
+        // a missing axis stays where the queue ends; G91 is relative to it (as FluidNC)
+        var end = q.length ? q[q.length - 1] : { x: m.x, y: m.y, z: m.z }, rel = /G91/.test(l);
+        var x = g("X"), y = g("Y"), z = g("Z");
+        x = x == null ? end.x : rel ? end.x + x : x;
+        y = y == null ? end.y : rel ? end.y + y : y;
+        z = z == null ? (end.z == null ? m.z : end.z) : rel ? (end.z == null ? m.z : end.z) + z : z;
+        if (!reach(x, y).ok) return out("error:15");
+        q.push({ x: x, y: y, z: z, f: g("F") }); m.st = "Jog"; return out("ok");
+      }
+      if (/^M[35]/.test(l) && (m.st === "Alarm" || m.st === "Jog")) return out("error:9");
+      if (/^M3/.test(l)) { ovr = 0; m.on = true; m.s = Math.min(C.s_max, parseFloat((l.match(/S([\d.]+)/) || [0, 0])[1])); return out("ok"); }
+      if (/^M5/.test(l)) { ovr = 0; m.on = false; return out("ok"); }
+      if (/^\$(SD|LocalFS)\/Run=/.test(l)) { out("[MSG:INFO: simulation : programme non exécuté]"); return out("ok"); }
+      out("ok");
+    };
+    this.close = function () { clearInterval(timer); };
+    var timer = setInterval(function () {
+      var dt = 0.05;
+      if (m.st === "Home") {
+        m.homeT += dt; var hp = fk(175, -90);
+        m.pn = m.homeT < 0.6 ? "Z" : m.homeT < 1.4 ? "X" : m.homeT < 2.2 ? "Y" : "";
+        if (m.homeT < 2.2) { m.x += (hp.x - m.x) * 0.08; m.y += (hp.y - m.y) * 0.08; m.z *= 0.8; }
+        else { m.x = hp.x; m.y = hp.y; m.z = 0; m.st = "Idle"; out("ok"); }
+        return;
+      }
+      if (!q.length) { if (m.st === "Jog") m.st = "Idle"; return; }
+      var j = q[0], dx = j.x - m.x, dy = j.y - m.y, dz = (j.z == null ? m.z : j.z) - m.z;
+      var L = Math.hypot(dx, dy, dz), s = (j.f || 1000) / 60 * dt;
+      if (L <= s) { m.x = j.x; m.y = j.y; m.z += dz; q.shift(); }
+      else { m.x += dx / L * s; m.y += dy / L * s; m.z += dz / L * s; }
+    }, 50);
+    setTimeout(function () { if (self.onopen) self.onopen(); out("Grbl 4.0 [FluidNC simulation '$' for help]"); }, 10);
+  }
+
+  // ---------------------------------------------------------------- start
+  drawStatic();
+  drawZone();
+  drawZTicks();
+  drawFiles("—");
+  render();
+  if (HOST) connect();
+  else { $("bSim").hidden = false; setConn("hors contrôleur"); say("Page ouverte hors du contrôleur : lancez la simulation, ou ajoutez ?host=<ip> à l'adresse."); }
+})();
+</script>
+</body>
+</html>

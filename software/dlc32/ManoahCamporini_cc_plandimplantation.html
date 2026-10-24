@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>compliance_contentio · Implantation</title>
+<meta name="description" content="compliance_contentio, itération 2026 pour le Centre Wallonie-Bruxelles à Paris : plan d'implantation du bras SCARA et de la zone qu'il couvre.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500&display=swap">
+<style>
+/* Architect's sheet: white paper, black linework, one blue and one red for the zone. */
+:root {
+  --paper: #ffffff;
+  --panel: #ffffff;
+  --ink: #111111;
+  --muted: #5a5a5a;
+  --rule: #111111;
+  --hair: #c8c8c8;
+  --wall: #111111;
+  --arm1: #111111;
+  --arm2: #6b6b6b;
+  --reach: #1f5fa6;
+  --out: #c62828;
+  --f-display: "IBM Plex Sans Condensed", "Arial Narrow", sans-serif;
+  --f-body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--paper); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1200px; margin: 0 auto; padding-inline: 16px; padding-block: calc(28px + env(safe-area-inset-top, 0px)) calc(40px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 20px; }
+
+header { display: grid; gap: 6px; border-bottom: 2px solid var(--rule); padding-bottom: 14px; }
+.eyebrow { font-family: var(--f-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+h1 { font-family: var(--f-display); font-weight: 600; font-size: clamp(28px, 5vw, 42px); line-height: 1.05; margin: 0; letter-spacing: .01em; text-transform: uppercase; text-wrap: balance; }
+h1 .dev { font-family: var(--f-mono); font-weight: 500; text-transform: none; letter-spacing: 0; }
+.sub { font-family: var(--f-display); font-size: 19px; margin: 0; }
+.lede { margin: 6px 0 0; max-width: 70ch; color: var(--muted); }
+h2 { font-family: var(--f-display); font-weight: 600; font-size: 14px; letter-spacing: .08em; text-transform: uppercase; margin: 0; padding-bottom: 6px; border-bottom: 1px solid var(--rule); }
+
+.stage { background: var(--panel); border: 1.5px solid var(--rule); padding: 10px; display: grid; gap: 10px; }
+#plan { display: block; width: 100%; height: auto; touch-action: none; cursor: crosshair; user-select: none; -webkit-user-select: none; }
+.status { display: flex; align-items: center; gap: 10px; min-height: 26px; font-size: 14px; font-family: var(--f-mono); border-top: 1px solid var(--hair); padding-top: 8px; }
+.dot { width: 9px; height: 9px; flex: none; }
+.dot.in { background: var(--reach); } .dot.out { background: var(--out); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.sw { width: 16px; height: 11px; display: inline-block; border: 1px solid var(--ink); }
+.sw.reach { background: color-mix(in srgb, var(--reach) 30%, white); }
+.sw.out { background: color-mix(in srgb, var(--out) 18%, white); }
+.sw.wall { background: repeating-linear-gradient(45deg, var(--ink) 0 1px, #fff 1px 4px); }
+.sw.rest { width: 18px; height: 0; border: 0; border-top: 1.5px dashed var(--ink); }
+.sw.motor { width: 14px; height: 10px; background: #fff; border: 1.5px solid var(--ink); position: relative; }
+.sw.motor::after { content: ""; position: absolute; inset: 2px 3px; border-left: 1px solid var(--ink); border-right: 1px solid var(--ink); }
+.sw.worm { width: 22px; height: 8px; border: 1.5px solid var(--ink); border-radius: 5px; background: #fff; }
+.sw.cable { width: 18px; height: 0; border: 0; border-top: 2px solid var(--ink); }
+.sw.door { width: 14px; height: 14px; border: 0; border-left: 1.5px solid var(--ink); border-top: 1px solid var(--ink); border-top-left-radius: 0; background: radial-gradient(circle at 0 100%, transparent 12px, var(--ink) 12px 13px, transparent 13px); }
+
+.app { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; align-items: start; }
+.app > * { min-width: 0; }
+@media (max-width: 960px) { .app { grid-template-columns: minmax(0, 1fr); } }
+.facts { display: grid; gap: 14px; }
+.card { background: var(--panel); border: 1.5px solid var(--rule); padding: 14px; display: grid; gap: 10px; }
+.figs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0; }
+.figs div { display: grid; gap: 2px; }
+.figs dt { font-size: 12px; color: var(--muted); }
+.figs dd { margin: 0; font-family: var(--f-mono); font-weight: 500; font-size: 19px; line-height: 1.15; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.notes ol { margin: 0; padding-left: 1.5em; display: grid; gap: 9px; font-size: 13.5px; }
+.notes li { padding-left: 2px; }
+.notes li::marker { font-family: var(--f-mono); }
+.notes b { font-family: var(--f-display); font-weight: 600; }
+.u { font-family: var(--f-body); font-size: 13px; color: var(--muted); }
+
+/* Title block, as in the bottom-right corner of a drawing sheet. */
+.cartouche { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1.5px solid var(--rule); }
+.cartouche div { padding: 8px 10px; border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule); display: grid; gap: 2px; min-width: 0; }
+.cartouche div:nth-child(4n) { border-right: 0; }
+.cartouche div:nth-last-child(-n+4) { border-bottom: 0; }
+.cartouche .k { font-family: var(--f-mono); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.cartouche .v { font-family: var(--f-display); font-weight: 500; font-size: 16px; overflow-wrap: anywhere; }
+.cartouche .v.mono { font-family: var(--f-mono); font-size: 15px; }
+@media (max-width: 640px) {
+  .cartouche { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cartouche div:nth-child(4n) { border-right: 1px solid var(--rule); }
+  .cartouche div:nth-child(2n) { border-right: 0; }
+  .cartouche div:nth-last-child(-n+4) { border-bottom: 1px solid var(--rule); }
+  .cartouche div:nth-last-child(-n+2) { border-bottom: 0; }
+}
+.fine { font-size: 12.5px; color: var(--muted); max-width: 80ch; margin: 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Plan d'implantation · itération 2026</div>
+    <h1><span class="dev">compliance_contentio</span> — Implantation du bras SCARA</h1>
+    <p class="sub">Itération 2026 pour le Centre Wallonie-Bruxelles, Paris</p>
+    <p class="lede">Le bras robotisé est fixé au centre du mur nord. Il est formé de deux segments articulés qui tournent dans un plan horizontal. Déplacez la souris sur le plan, ou votre doigt sur un écran tactile : le bras se place pour amener sa tête sous le curseur.</p>
+  </header>
+
+  <div class="app">
+  <div class="stage">
+      <svg id="plan" viewBox="-1.1 -0.9 6.05 4.3" role="img" aria-label="Plan de la salle : le bras SCARA fixé au centre du mur nord, la zone de mouvement du wormbot en bleu, les deux portes, et le bras qui suit le curseur">      
+        <defs>
+          <pattern id="hatch" patternUnits="userSpaceOnUse" width="0.05" height="0.05" patternTransform="rotate(45)">
+            <rect width="0.05" height="0.05" fill="#ffffff"/>
+            <line x1="0" y1="0" x2="0" y2="0.05" stroke="#111111" stroke-width="0.007"/>
+          </pattern>
+        </defs>
+        <image id="zone" x="-1.1" y="-0.9" width="6.05" height="4.3" preserveAspectRatio="none" href=""/>
+        <g id="walls"></g>
+        <g id="doors"></g>
+        <g id="dims"></g>
+        <g id="labels"></g>
+        <g id="wormbot"></g>
+        <g id="rest"></g>
+        <g id="arm"></g>
+        <g id="cursor"></g>
+      </svg>
+      <div class="status" id="status" aria-live="polite"></div>
+      <div class="legend" aria-hidden="true">
+        <span><i class="sw reach"></i>zone de mouvement</span>
+        <span><i class="sw out"></i>hors d'atteinte</span>
+        <span><i class="sw wall"></i>maçonnerie</span>
+        <span><i class="sw door"></i>porte et débattement</span>
+        <span><i class="sw rest"></i>position de repos</span>
+        <span><i class="sw motor"></i>motorisation wormbot (au sol)</span>
+        <span><i class="sw cable"></i>câble</span>
+        <span><i class="sw worm"></i>wormbot (1 m)</span>
+      </div>
+  </div>
+
+  <aside class="facts">
+    <div class="card">
+      <h2>En chiffres</h2>
+      <dl class="figs">
+        <div><dt>Portée du bras</dt><dd id="f-reach">—</dd></div>
+        <div><dt>Segments</dt><dd id="f-arms">—</dd></div>
+        <div><dt>Zone de mouvement</dt><dd id="f-area">—</dd></div>
+        <div><dt>Part de la salle</dt><dd id="f-share">—</dd></div>
+      </dl>
+    </div>
+    <div class="card notes">
+      <h2>Notes</h2>
+      <ol>
+        <li><b>Bras mural (SCARA).</b> Le premier segment pivote sur la fixation au mur nord, le second au coude. Evoluant le long de rail sur l'axe vertical il ajuste également sa hauteur.</li>
+        <li><b>Zone de mouvement.</b> Le wormbot évoluera librement sur le sol en étant limité par la longueur de ses cables (évolution aléatoire et très lente) sur le sol. 
+        <li><b>Eclairage</b>Les lumiere du lieu sont éteintes : unique point lumineux au bout de la tête du SCARA. (pas génant si autre lumière technique genre sortie de secours)</li>
+        <li><b>Sécurité.</b> Chacun des éléments de l'installation possède la souplesse mécanique nécessaire pour ne présenter aucun danger en usage public.</li>
+        <li><b>Orientation.</b> Le nord est indicatif : il reprend l'orientation d'un plan technique du Centre Wallonie-Bruxelles.</li>
+      </ol>
+    </div>
+  </aside>
+  </div>
+
+  <div class="cartouche">
+    <div><span class="k">Dispositif</span><span class="v mono">compliance_contentio</span></div>
+    <div><span class="k">Lieu</span><span class="v">Centre Wallonie-Bruxelles, Paris</span></div>
+    <div><span class="k">Itération</span><span class="v">2026</span></div>
+    <div><span class="k">Objet</span><span class="v">Implantation du bras SCARA</span></div>
+    <div><span class="k">Salle</span><span class="v mono">3,99 × 2,92 m</span></div>
+    <div><span class="k">Hauteur sous plafond</span><span class="v mono">2,19 m</span></div>
+    <div><span class="k">Cotes</span><span class="v">en mètres</span></div>
+    <div><span class="k">Échelle</span><span class="v">indicative</span></div>
+  </div>
+
+  <p class="fine">Plan indicatif, établi d'après plan technique fournis. Les dimensions exactesdes portes et le côté des charnières sont à confirmer sur site.</p>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var NS = "http://www.w3.org/2000/svg";
+
+  // ---- installation (from the machine configuration) ----
+  var L1 = 1090, L2 = 1050;             // segment lengths, mm
+  var J1_MIN = 10, J1_MAX = 180;        // shoulder rotation limits, degrees
+  var R_MAX = L1 + L2;                  // reach, mm
+  var ELBOW_NEGATIVE = true;            // the elbow folds to this side
+  var REST_J1 = 175, REST_ELBOW = -90;  // rest pose, degrees
+
+  // ---- room, metres, x east from the west wall, y south from the north wall ----
+  var RW = 3.99, RD = 2.92;
+  var BASE = { x: RW / 2, y: 0 };       // centre of the north wall
+  var FRAME = 180;                      // robot +X points west on the plan
+  var VB = { x: -1.1, y: -0.9, w: 6.05, h: 4.3 };
+  var WALLS = [
+    [[0, 0], [RW, 0]],
+    [[RW, 0], [RW, 1.86]], [[RW, 2.62], [RW, RD]],
+    [[0, RD], [RW, RD]],
+    [[0, 0], [0, 1.34]], [[0, 1.90], [0, RD]]
+  ];
+  var WALL_RECTS = [
+    [-0.12, -0.12, RW + 0.24, 0.12], [-0.12, RD, RW + 0.24, 0.12],
+    [-0.12, 0, 0.12, 1.34], [-0.12, 1.90, 0.12, RD - 1.90],
+    [RW, 0, 0.12, 1.86], [RW, 2.62, 0.12, RD - 2.62]
+  ];
+
+  var $ = function (id) { return document.getElementById(id); };
+  var svg = $("plan");
+  var rad = function (d) { return d * Math.PI / 180; };
+  var deg = function (r) { return r * 180 / Math.PI; };
+  var fr = function (v, d) { return v.toFixed(d).replace(".", ","); };
+  function el(tag, attrs, parent, text) {
+    var n = document.createElementNS(NS, tag);
+    for (var k in attrs) n.setAttribute(k, attrs[k]);
+    if (text !== undefined) n.textContent = text;
+    if (parent) parent.appendChild(n);
+    return n;
+  }
+  function clear(g) { while (g.firstChild) g.removeChild(g.firstChild); }
+
+  // robot frame (mm, counter-clockwise seen from above) <-> plan (metres, y south)
+  function toPlan(xmm, ymm) {
+    var th = rad(FRAME), x = xmm / 1000, y = ymm / 1000;
+    return [BASE.x + x * Math.cos(th) - y * Math.sin(th), BASE.y - (x * Math.sin(th) + y * Math.cos(th))];
+  }
+  function fromPlan(px, py) {
+    var th = rad(FRAME), u = px - BASE.x, v = -(py - BASE.y);
+    return { x: (u * Math.cos(th) + v * Math.sin(th)) * 1000, y: (-u * Math.sin(th) + v * Math.cos(th)) * 1000 };
+  }
+  function pose(j1, elbow) {
+    var a1 = rad(j1), a2 = rad(j1 + elbow);
+    var ex = L1 * Math.cos(a1), ey = L1 * Math.sin(a1);
+    return { base: [BASE.x, BASE.y], elbow: toPlan(ex, ey), tool: toPlan(ex + L2 * Math.cos(a2), ey + L2 * Math.sin(a2)) };
+  }
+  // Same geometry as the controller: law of cosines, fixed elbow side.
+  function solve(x, y) {
+    var r2 = x * x + y * y, r = Math.sqrt(r2);
+    var c = (r2 - L1 * L1 - L2 * L2) / (2 * L1 * L2);
+    if (c > 1 || r > R_MAX) return { ok: false, why: "far", r: r };
+    if (c < -1) return { ok: false, why: "far", r: r };
+    var t2 = Math.acos(c); if (ELBOW_NEGATIVE) t2 = -t2;
+    var j1 = deg(Math.atan2(y, x) - Math.atan2(L2 * Math.sin(t2), L1 + L2 * Math.cos(t2)));
+    while (j1 < J1_MIN) j1 += 360;
+    while (j1 > J1_MIN + 360) j1 -= 360;
+    if (j1 > J1_MAX) return { ok: false, why: "angle", r: r };
+    var p = pose(j1, deg(t2));
+    if (clash(p)) return { ok: false, why: "wall", r: r, p: p };
+    return { ok: true, r: r, p: p };
+  }
+  function hit(p1, p2, p3, p4) {
+    var d = (p2[0] - p1[0]) * (p4[1] - p3[1]) - (p2[1] - p1[1]) * (p4[0] - p3[0]);
+    if (Math.abs(d) < 1e-12) return null;
+    var t = ((p3[0] - p1[0]) * (p4[1] - p3[1]) - (p3[1] - p1[1]) * (p4[0] - p3[0])) / d;
+    var u = ((p3[0] - p1[0]) * (p2[1] - p1[1]) - (p3[1] - p1[1]) * (p2[0] - p1[0])) / d;
+    return (t >= 0 && t <= 1 && u >= 0 && u <= 1) ? [p1[0] + t * (p2[0] - p1[0]), p1[1] + t * (p2[1] - p1[1])] : null;
+  }
+  function clash(p) {
+    var links = [[p.base, p.elbow], [p.elbow, p.tool]];
+    for (var i = 0; i < 2; i++) for (var w = 0; w < WALLS.length; w++) {
+      var h = hit(links[i][0], links[i][1], WALLS[w][0], WALLS[w][1]);
+      if (h && Math.hypot(h[0] - BASE.x, h[1] - BASE.y) > 0.05) return true;
+    }
+    return false;
+  }
+
+  // ---- covered zone, drawn once, plus the covered area ----
+  function tok(name, a) {
+    var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim(), m = v.match(/^#([0-9a-f]{6})$/i);
+    var n = m ? parseInt(m[1], 16) : 0x808080;
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255, a];
+  }
+  function drawZone() {
+    var step = 0.02, W = Math.ceil(VB.w / step), H = Math.ceil(VB.h / step);
+    var cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+    var ctx = cv.getContext("2d"), img = ctx.createImageData(W, H), d = img.data;
+    var cIn = tok("--reach", 62), cOut = tok("--out", 34), covered = 0;
+    for (var j = 0; j < H; j++) for (var i = 0; i < W; i++) {
+      var px = VB.x + (i + 0.5) * step, py = VB.y + (j + 0.5) * step;
+      var inRoom = px >= 0 && px <= RW && py >= 0 && py <= RD;
+      var m = fromPlan(px, py), s = solve(m.x, m.y), col = null;
+      if (s.ok) { col = cIn; if (inRoom) covered++; }
+      else if (inRoom) col = cOut;
+      if (col) { var k = (j * W + i) * 4; d[k] = col[0]; d[k + 1] = col[1]; d[k + 2] = col[2]; d[k + 3] = col[3]; }
+    }
+    ctx.putImageData(img, 0, 0);
+    $("zone").setAttribute("href", cv.toDataURL());
+    var area = covered * step * step, room = RW * RD;
+    $("f-area").innerHTML = fr(area, 1) + " <span class='u'>m²</span>";
+    $("f-share").innerHTML = Math.round(area / room * 100) + " <span class='u'>%</span>";
+  }
+
+  var SVG_FONT = "font-family: 'IBM Plex Sans Condensed', 'Arial Narrow', sans-serif";
+  var LINE = "stroke: var(--ink); fill: none";
+
+  // Dimension line with 45° architectural ticks; vertical when x1 == x2.
+  function dim(g, x1, y1, x2, y2, label) {
+    var v = x1 === x2, t = 0.035;
+    el("line", { x1: x1, y1: y1, x2: x2, y2: y2, style: LINE + "; stroke-width: 0.006" }, g);
+    [[x1, y1], [x2, y2]].forEach(function (q) {
+      el("line", { x1: q[0] - t, y1: q[1] + t, x2: q[0] + t, y2: q[1] - t, style: LINE + "; stroke-width: 0.012" }, g);
+    });
+    var mx = (x1 + x2) / 2, my = (y1 + y2) / 2, st = "font-size: 0.095px; fill: var(--ink); " + SVG_FONT;
+    if (v) el("text", { x: mx - 0.04, y: my, "text-anchor": "middle", style: st, transform: "rotate(-90 " + (mx - 0.04) + " " + my + ")" }, g, label);
+    else el("text", { x: mx, y: my - 0.04, "text-anchor": "middle", style: st }, g, label);
+  }
+  function ext(g, x1, y1, x2, y2) { el("line", { x1: x1, y1: y1, x2: x2, y2: y2, style: LINE + "; stroke-width: 0.004" }, g); }
+
+  // Door in plan: leaf drawn open at 90°, thin arc for the swing.
+  function door(g, hinge, leafEnd, closedEnd, r, tag, tagAt) {
+    el("line", { x1: hinge[0], y1: hinge[1], x2: leafEnd[0], y2: leafEnd[1], style: LINE + "; stroke-width: 0.025" }, g);
+    el("path", { d: "M " + leafEnd[0] + " " + leafEnd[1] + " A " + r + " " + r + " 0 0 0 " + closedEnd[0] + " " + closedEnd[1], style: LINE + "; stroke-width: 0.006" }, g);
+    el("text", { x: tagAt[0], y: tagAt[1], "text-anchor": "middle", style: "font-size: 0.1px; font-weight: 600; fill: var(--ink); " + SVG_FONT }, g, tag);
+  }
+
+  function drawStatic() {
+    var g = $("walls");
+    WALL_RECTS.forEach(function (r) { el("rect", { x: r[0], y: r[1], width: r[2], height: r[3], style: "fill: url(#hatch); stroke: var(--wall); stroke-width: 0.014" }, g); });
+
+    // doors: P1 west, hung on the outer face, opens outward; P2 east, hung on the inner face, opens inward
+    var d = $("doors");
+    door(d, [-0.12, 1.34], [-0.68, 1.34], [-0.12, 1.90], 0.56, "P1", [-0.36, 2.06]);
+    door(d, [RW, 1.86], [RW - 0.76, 1.86], [RW, 2.62], 0.76, "P2", [RW - 0.2, 2.5]);
+
+    // dimensions: overall width on top, opening chains on each side
+    var m = $("dims");
+    ext(m, 0, -0.14, 0, -0.56); ext(m, RW, -0.14, RW, -0.56);
+    dim(m, 0, -0.5, RW, -0.5, "3,99");
+    var xl = -0.86;
+    [0, 1.34, 1.90, RD].forEach(function (y) { ext(m, y === 1.34 ? -0.7 : -0.14, y, xl - 0.06, y); });
+    dim(m, xl, 0, xl, 1.34, "1,34"); dim(m, xl, 1.34, xl, 1.90, "0,56"); dim(m, xl, 1.90, xl, RD, "1,02");
+    var xr = RW + 0.4, xo = RW + 0.68;
+    [0, 1.86, 2.62, RD].forEach(function (y) { ext(m, RW + 0.14, y, (y === 0 || y === RD ? xo : xr) + 0.06, y); });
+    dim(m, xr, 0, xr, 1.86, "1,86"); dim(m, xr, 1.86, xr, 2.62, "0,76"); dim(m, xr, 2.62, xr, RD, "0,30");
+    dim(m, xo, 0, xo, RD, "2,92");
+
+    var t = $("labels"), s = "font-size: 0.09px; fill: var(--muted); letter-spacing: 0.01px; " + SVG_FONT;
+    el("text", { x: RW * 0.86, y: -0.2, "text-anchor": "middle", style: s }, t, "MUR NORD");
+    el("text", { x: RW / 2, y: RD + 0.27, "text-anchor": "middle", style: s }, t, "MUR SUD");
+    el("text", { x: RW * 0.22, y: RD * 0.72, "text-anchor": "middle", style: "font-size: 0.11px; fill: var(--muted); " + SVG_FONT }, t, "SALLE · 11,65 m² · h 2,19");
+
+    // north arrow
+    var nx = RW + 0.55, ny = -0.62;
+    el("circle", { cx: nx, cy: ny, r: 0.12, style: LINE + "; stroke-width: 0.008" }, t);
+    el("path", { d: "M " + nx + " " + (ny - 0.12) + " L " + (nx + 0.05) + " " + (ny + 0.07) + " L " + nx + " " + (ny + 0.02) + " Z", style: "fill: var(--ink)" }, t);
+    el("path", { d: "M " + nx + " " + (ny - 0.12) + " L " + (nx - 0.05) + " " + (ny + 0.07) + " L " + nx + " " + (ny + 0.02) + " Z", style: LINE + "; stroke-width: 0.006; fill: #fff" }, t);
+    el("text", { x: nx, y: ny - 0.16, "text-anchor": "middle", style: "font-size: 0.09px; font-weight: 600; fill: var(--ink); " + SVG_FONT }, t, "N");
+    el("text", { x: nx, y: ny + 0.22, "text-anchor": "middle", style: "font-size: 0.065px; fill: var(--muted); " + SVG_FONT }, t, "nord indicatif");
+
+    // robot fixation: cross-marked square
+    el("rect", { x: BASE.x - 0.08, y: BASE.y - 0.08, width: 0.16, height: 0.16, style: "fill: #fff; stroke: var(--ink); stroke-width: 0.014" }, t);
+    el("path", { d: "M " + (BASE.x - 0.08) + " " + (BASE.y - 0.08) + " l 0.16 0.16 M " + (BASE.x + 0.08) + " " + (BASE.y - 0.08) + " l -0.16 0.16", style: LINE + "; stroke-width: 0.008" }, t);
+    el("text", { x: BASE.x + 0.1, y: -0.2, style: s }, t, "FIXATION BRAS");
+    drawWormbot();
+    drawArm($("rest"), pose(REST_J1, REST_ELBOW), true);
+  }
+  // Wormbot motor box on the floor at the east tip of the movement zone, cable to the
+  // middle of the zone, and a minimal 1 m wormbot at the cable's end.
+  var MOTOR = { x: RW - 0.32, y: 0.60, w: 0.30, h: 0.20 };
+  var WORM_START = [2.16, 1.07], WORM_DIR = 200, WORM_LEN = 1.0;
+  // phase moves a wave along the body; sway turns the whole body a few degrees about its tail
+  function wormPoints(phase, sway) {
+    phase = phase || 0; sway = sway || 0;
+    var a = rad(WORM_DIR + sway), dx = Math.cos(a), dy = -Math.sin(a), amp = 0.04, waves = 1.5, n = 60;
+    function pts(len) {
+      var out = [];
+      for (var i = 0; i <= n; i++) {
+        var u = i / n, off = amp * Math.sin(u * waves * 2 * Math.PI - phase) * Math.min(1, u * 4);
+        out.push([WORM_START[0] + dx * len * u - dy * off, WORM_START[1] + dy * len * u + dx * off]);
+      }
+      return out;
+    }
+    function arc(p) { var l = 0; for (var i = 1; i < p.length; i++) l += Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]); return l; }
+    var p = pts(WORM_LEN);
+    return pts(WORM_LEN * WORM_LEN / arc(p));   // scale so the body itself measures 1 m
+  }
+  function drawWormbot() {
+    var g = $("wormbot"), m = MOTOR;
+    var c0 = [m.x, m.y + m.h / 2];
+    // cable laid in an S on the floor, between the motor and the wormbot
+    var w0 = WORM_START;
+    el("path", { d: "M " + c0[0] + " " + c0[1] +
+      " C " + (c0[0] - 0.45) + " " + (c0[1] - 0.05) + " " + (c0[0] - 0.35) + " " + (c0[1] + 0.75) + " " + (c0[0] - 0.8) + " " + (c0[1] + 0.7) +
+      " S " + (w0[0] + 0.35) + " " + (w0[1] - 0.35) + " " + w0[0] + " " + w0[1],
+      style: "stroke: #000; stroke-width: 0.016; fill: none; stroke-linecap: round" }, g);
+    el("rect", { x: m.x, y: m.y, width: m.w, height: m.h, style: "fill: #fff; stroke: var(--ink); stroke-width: 0.016" }, g);
+    el("line", { x1: m.x + 0.06, y1: m.y, x2: m.x + 0.06, y2: m.y + m.h, style: "stroke: var(--ink); stroke-width: 0.006" }, g);
+    el("line", { x1: m.x + m.w - 0.06, y1: m.y, x2: m.x + m.w - 0.06, y2: m.y + m.h, style: "stroke: var(--ink); stroke-width: 0.006" }, g);
+    el("text", { x: m.x + m.w, y: m.y - 0.13, "text-anchor": "end", style: "font-size: 0.075px; fill: var(--ink); " + SVG_FONT }, g, "MOTORISATION (SOL)");
+    el("text", { x: m.x + m.w, y: m.y - 0.04, "text-anchor": "end", style: "font-size: 0.07px; fill: var(--muted); " + SVG_FONT }, g, "0,30 × 0,20");
+    var body = [
+      el("path", { style: "stroke: var(--ink); stroke-width: 0.085; fill: none; stroke-linecap: round; stroke-linejoin: round" }, g),
+      el("path", { style: "stroke: #fff; stroke-width: 0.055; fill: none; stroke-linecap: round; stroke-linejoin: round" }, g),
+      el("path", { style: "stroke: var(--ink); stroke-width: 0.055; fill: none; stroke-dasharray: 0.006 0.07; stroke-dashoffset: -0.04" }, g)
+    ];
+    var head = el("circle", { r: 0.012, style: "fill: var(--ink)" }, g);
+    function shape(phase, sway) {
+      var w = wormPoints(phase, sway), tip = w[w.length - 1];
+      var d = w.map(function (q, i) { return (i ? "L " : "M ") + q[0].toFixed(4) + " " + q[1].toFixed(4); }).join(" ");
+      body.forEach(function (b) { b.setAttribute("d", d); });
+      head.setAttribute("cx", tip[0]); head.setAttribute("cy", tip[1]);
+    }
+    shape(0, 0);
+    var still = false;
+    try { still = matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) {}
+    if (!still) (function tick(ms) {
+      var t = (ms || 0) / 1000;
+      shape(t * 2.2, 9 * Math.sin(t * 0.45));
+      requestAnimationFrame(tick);
+    })();
+    var w = wormPoints(), tip = w[w.length - 1];
+    el("text", { x: (w[0][0] + tip[0]) / 2, y: (w[0][1] + tip[1]) / 2 + 0.16, "text-anchor": "middle", style: "font-size: 0.075px; fill: var(--ink); " + SVG_FONT }, g, "WORMBOT · 1 m");
+  }
+
+  function drawArm(g, p, rest) {
+    clear(g);
+    var dash = rest ? "; stroke-dasharray: 0.05 0.035; opacity: .7" : "";
+    var w = rest ? 0.018 : 0.045;
+    el("line", { x1: p.base[0], y1: p.base[1], x2: p.elbow[0], y2: p.elbow[1], style: "stroke: var(--arm1); stroke-width: " + w + "; stroke-linecap: round" + dash }, g);
+    el("line", { x1: p.elbow[0], y1: p.elbow[1], x2: p.tool[0], y2: p.tool[1], style: "stroke: var(--arm2); stroke-width: " + w + "; stroke-linecap: round" + dash }, g);
+    if (!rest) {
+      el("circle", { cx: p.elbow[0], cy: p.elbow[1], r: 0.05, style: "fill: var(--panel); stroke: var(--ink); stroke-width: 0.02" }, g);
+      el("circle", { cx: p.tool[0], cy: p.tool[1], r: 0.055, style: "fill: var(--panel); stroke: var(--ink); stroke-width: 0.02" }, g);
+      el("circle", { cx: p.tool[0], cy: p.tool[1], r: 0.018, style: "fill: var(--ink)" }, g);
+    }
+  }
+
+  var last = null;
+  var WHY = { far: "Hors de portée du bras", angle: "Hors de l'angle de rotation du bras", wall: "Le bras toucherait un mur pour y arriver" };
+  function aim(px, py) {
+    var m = fromPlan(px, py), s = solve(m.x, m.y), g = $("cursor"); clear(g);
+    if (s.ok) last = s.p;
+    drawArm($("arm"), last || pose(REST_J1, REST_ELBOW), false);
+    $("arm").style.opacity = s.ok ? "1" : ".35";
+    var col = s.ok ? "var(--reach)" : "var(--out)";
+    el("circle", { cx: px, cy: py, r: 0.08, style: "fill: none; stroke: " + col + "; stroke-width: 0.02" }, g);
+    var st = $("status");
+    st.innerHTML = "";
+    var dot = document.createElement("span"); dot.className = "dot " + (s.ok ? "in" : "out"); st.appendChild(dot);
+    var txt = document.createElement("span");
+    txt.textContent = (s.ok ? "Zone de mouvement" : WHY[s.why]) + " · à " + fr(s.r / 1000, 2) + " m de la fixation";
+    st.appendChild(txt);
+  }
+  function pt(e) { var p = svg.createSVGPoint(); p.x = e.clientX; p.y = e.clientY; return p.matrixTransform(svg.getScreenCTM().inverse()); }
+  svg.addEventListener("pointermove", function (e) { var p = pt(e); aim(p.x, p.y); });
+  svg.addEventListener("pointerdown", function (e) { var p = pt(e); aim(p.x, p.y); });
+
+  $("f-reach").innerHTML = fr(R_MAX / 1000, 2) + " <span class='u'>m</span>";
+  $("f-arms").innerHTML = fr(L1 / 1000, 2) + "+" + fr(L2 / 1000, 2) + " <span class='u'>m</span>";
+  drawStatic();
+  drawZone();
+  aim(RW / 2, 1.2);
+})();
+</script>
+</body>
+</html>

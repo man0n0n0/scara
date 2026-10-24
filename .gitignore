@@ -1,0 +1,7 @@
+# build output
+.pio/
+__pycache__/
+*.pyc
+
+# nested repos moved aside so their files are vendored here
+.git.bak/

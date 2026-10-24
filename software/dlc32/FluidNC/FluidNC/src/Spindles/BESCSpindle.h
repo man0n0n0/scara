@@ -1,0 +1,93 @@
+// Copyright (c) 2020 -	Bart Dring
+// Use of this source code is governed by a GPLv3 license that can be found in the LICENSE file.
+
+#pragma once
+
+/*
+	BESCSpindle.h
+
+	This a special type of PWM spindle for RC type Brushless DC Speed
+	controllers. They use a short pulse for off and a longer pulse for
+	full on. The pulse is always a small portion of the full cycle.
+	Some BESCs have a special turn on procedure. This may be a one time
+	procedure or must be done every time. The user must do that via gcode.
+
+	Important ESC Settings
+	50 Hz this is a typical frequency for an ESC
+	Some ESCs can handle higher frequencies, but there is no advantage to changing it.
+
+	Determine the typical min and max pulse length of your ESC
+	BESC_MIN_PULSE_SECS is typically 1ms (0.001 sec) or less
+	BESC_MAX_PULSE_SECS is typically 2ms (0.002 sec) or more
+
+*/
+
+#include "PWMSpindle.h"
+
+#include <cstdint>
+
+namespace Spindles {
+    class BESC : public PWM {
+    private:
+        // Fixed
+        static constexpr uint32_t besc_pwm_min_freq = 50;    // 50 Hz
+        static constexpr uint32_t besc_pwm_max_freq = 2000;  // 50 Hz
+
+        // Calculated
+        uint32_t _pulse_span_counts;  // In counts of a 32-bit counter
+        uint32_t _min_pulse_counts;   // In counts of a 32-bit counter
+
+    protected:
+        // Configurable
+        uint32_t _min_pulse_us = 900;   // microseconds
+        uint32_t _max_pulse_us = 2200;  // microseconds
+
+    public:
+        BESC(const char* name) : PWM(name) {}
+
+        BESC(const BESC&)            = delete;
+        BESC(BESC&&)                 = delete;
+        BESC& operator=(const BESC&) = delete;
+        BESC& operator=(BESC&&)      = delete;
+
+        void init() override;
+        void config_message() override;
+
+        void set_output(uint32_t duty) override;
+
+        // Configuration handlers:
+        void validate() override { PWM::validate(); }
+
+        void group(Configuration::HandlerBase& handler) override {
+            // @default_for speed_map
+            // @default 0=0% 0=20% 4000=20% 20000=100%
+            // @default_note applied by BESC::init() only when unset -- shelf: flat 20% to 4000, then linear to 20000=100%
+            PWM::group(handler);
+
+            // A BESC (Brushless ESC, as used for RC-plane/drone motors) is driven like an
+            // RC servo, not an ordinary PWM duty cycle: a short pulse means off, a long
+            // pulse means full power, and the pulse is always a small fraction of the full
+            // period. Set pwm_hz (inherited from PWM) to the ESC's expected repetition
+            // rate -- commonly 50Hz, though some ESCs tolerate higher rates.
+
+            // @config min_pulse_us
+            // @default 900
+            // @tuning per-machine
+            // Pulse width, in microseconds, corresponding to the ESC's "off" signal.
+            // Determine your ESC's actual min pulse from its datasheet/documentation --
+            // typically around 1ms (1000us) or less.
+            handler.item("min_pulse_us", _min_pulse_us, 500, 3000);
+
+            // @config max_pulse_us
+            // @default 2200
+            // @tuning per-machine
+            // Pulse width, in microseconds, corresponding to the ESC's full-power signal.
+            // Typically around 2ms (2000us) or more -- check your ESC's documentation.
+            handler.item("max_pulse_us", _max_pulse_us, 500, 3000);
+        }
+
+        void afterParse() override {}
+
+        ~BESC() {}
+    };
+}

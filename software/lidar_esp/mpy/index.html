@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pole Tracker</title>
+<style>
+:root{--bg:#14161a;--panel:#1d2026;--line:#2d323b;--fg:#e8eaed;--dim:#9aa3af;
+--ok:#4ade80;--bad:#f87171;--acc:#60a5fa}
+*{box-sizing:border-box}
+body{margin:0;padding:12px;background:var(--bg);color:var(--fg);
+font:14px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace}
+h1{font-size:16px;margin:0 0 10px}
+h2{font-size:13px;margin:0 0 8px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em}
+.wrap{display:flex;flex-wrap:wrap;gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px}
+canvas{display:block;width:100%;height:auto;image-rendering:pixelated;
+border-radius:4px;background:#000}
+#view{max-width:640px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:2px 10px}
+.kv span:nth-child(odd){color:var(--dim)}
+button{background:#2b313a;color:var(--fg);border:1px solid var(--line);
+border-radius:5px;padding:6px 10px;cursor:pointer;font:inherit;margin:2px 2px 2px 0}
+button:hover{background:#343b46}
+input{background:#101217;color:var(--fg);border:1px solid var(--line);
+border-radius:5px;padding:5px 7px;font:inherit;width:84px}
+table{border-collapse:collapse;width:100%;font-size:12px}
+td,th{border-bottom:1px solid var(--line);padding:3px 5px;text-align:right}
+th:first-child,td:first-child{text-align:left}
+.ok{color:var(--ok)}.bad{color:var(--bad)}.dim{color:var(--dim)}
+#msg{min-height:18px;color:var(--acc);font-size:12px}
+</style>
+</head>
+<body>
+<h1>Pole Tracker <span id="hdr" class="dim"></span></h1>
+<div class="wrap">
+
+<div class="card" id="view">
+  <h2>Live view</h2>
+  <canvas id="cam" width="320" height="240"></canvas>
+  <div style="margin-top:8px">
+    <button onclick="grab()">Refresh frame</button>
+    <label class="dim"><input type="checkbox" id="auto" checked style="width:auto"> auto</label>
+    <span class="dim" id="fps"></span>
+  </div>
+</div>
+
+<div class="card" style="min-width:270px;flex:1">
+  <h2>Detection</h2>
+  <div class="kv" id="kv"></div>
+  <h2 style="margin-top:14px">Score</h2>
+  <canvas id="bar" width="300" height="26"></canvas>
+  <h2 style="margin-top:14px">Column profiles</h2>
+  <canvas id="prof" width="320" height="90"></canvas>
+</div>
+
+<div class="card" style="min-width:270px">
+  <h2>Setup</h2>
+  <div>
+    <button onclick="post('/api/learn',{},'background relearned')">Relearn background</button>
+    <div class="dim" style="font-size:12px;margin:4px 0 8px">
+      scene must be EMPTY when you press this
+    </div>
+  </div>
+  exposure <input id="exposure" type="number" value="300">
+  gain <input id="gain" type="number" value="4"><br>
+  margin <input id="margin" type="number" step="0.1" value="1.8">
+  row step <input id="row_step" type="number" min="1" max="8" value="1">
+  <button onclick="applySettings()">Apply</button>
+  <div class="dim" style="font-size:12px;margin:4px 0 0">
+    row step samples every Nth image row: higher is faster, less sensitive.
+    Changing it drops the background -- relearn right after.
+  </div>
+
+  <h2 style="margin-top:16px">Calibration</h2>
+  <div class="dim" style="font-size:12px;margin-bottom:6px">
+    Put the pole at a known floor spot, type its coordinates, Capture. 4+ points,
+    not collinear.
+  </div>
+  X <input id="cx" type="number" value="0"> Y <input id="cy" type="number" value="1000">
+  <button onclick="capture()">Capture</button>
+  <button onclick="post('/api/calib/solve',{},null,solved)">Solve</button>
+  <button onclick="post('/api/calib/undo',{},'last point removed')">Undo</button>
+  <button onclick="if(confirm('Clear all calibration points?'))
+    post('/api/calib/clear',{},'cleared')">Clear</button>
+  <div id="msg"></div>
+  <table id="pts"></table>
+</div>
+
+<div class="card" style="min-width:270px">
+  <h2>Floor position</h2>
+  <canvas id="floor" width="300" height="300"></canvas>
+  <div class="kv" id="xykv"></div>
+</div>
+
+</div>
+<script>
+const $=id=>document.getElementById(id);
+let W=320,H=240,last={},trail=[],imgData=null,synced=false;
+
+// Auto-exposure left on would make the learned background meaningless, so say
+// plainly which locks this firmware actually accepted.
+function locksText(l){
+  if(!l||!Object.keys(l).length) return '-';
+  const bad=Object.keys(l).filter(k=>l[k]!=='off');
+  return bad.length? '<span class="bad">'+bad.join(', ')+' NOT locked</span>'
+                   : '<span class="ok">all locked</span>';
+}
+
+async function grab(){
+  try{
+    const r=await fetch('/raw',{cache:'no-store'});
+    if(!r.ok)return;
+    W=+r.headers.get('X-Width')||W; H=+r.headers.get('X-Height')||H;
+    const b=new Uint8Array(await r.arrayBuffer());
+    const c=$('cam'); c.width=W; c.height=H;
+    const ctx=c.getContext('2d');
+    if(!imgData||imgData.width!==W||imgData.height!==H) imgData=ctx.createImageData(W,H);
+    const d=imgData.data;
+    for(let i=0,j=0;i<b.length;i++,j+=4){d[j]=d[j+1]=d[j+2]=b[i];d[j+3]=255;}
+    ctx.putImageData(imgData,0,0);
+    drawOverlay(ctx);
+  }catch(e){}
+}
+
+function drawOverlay(ctx){
+  if(!last.hit)return;
+  const x=last.x,w=last.w,base=last.base;
+  ctx.strokeStyle='#f87171'; ctx.lineWidth=1;
+  ctx.beginPath();
+  ctx.moveTo(x-w/2,0); ctx.lineTo(x-w/2,H);
+  ctx.moveTo(x+w/2,0); ctx.lineTo(x+w/2,H);
+  ctx.stroke();
+  if(base>=0){
+    ctx.strokeStyle='#60a5fa';
+    ctx.beginPath(); ctx.moveTo(x-w,base); ctx.lineTo(x+w,base); ctx.stroke();
+  }
+}
+
+function bar(){
+  const c=$('bar'),g=c.getContext('2d');
+  g.clearRect(0,0,c.width,c.height);
+  const sc=last.score||0, th=last.thresh||1;
+  const full=Math.max(sc,th*2,1);
+  g.fillStyle='#2b313a'; g.fillRect(0,6,c.width,14);
+  g.fillStyle=sc>th?'#4ade80':'#f87171';
+  g.fillRect(0,6,c.width*Math.min(sc/full,1),14);
+  const tx=c.width*Math.min(th/full,1);
+  g.fillStyle='#e8eaed'; g.fillRect(tx-1,2,2,22);
+  g.font='10px monospace'; g.fillText('threshold',Math.min(tx+4,c.width-60),24);
+}
+
+async function profiles(){
+  try{
+    const p=await (await fetch('/profiles',{cache:'no-store'})).json();
+    const c=$('prof'),g=c.getContext('2d');
+    g.clearRect(0,0,c.width,c.height);
+    const all=p.dpos.concat(p.dneg), top=Math.max(1,...all);
+    const n=p.dpos.length, bw=c.width/n;
+    const draw=(arr,col,y0,hh)=>{g.fillStyle=col;
+      arr.forEach((v,i)=>{const h=hh*v/top; g.fillRect(i*bw,y0+hh-h,Math.max(bw-0.5,1),h);});};
+    draw(p.dpos,'#60a5fa',0,42);
+    draw(p.dneg,'#fbbf24',46,42);
+    g.fillStyle='#9aa3af'; g.font='10px monospace';
+    g.fillText('rising  peak '+top,4,10);
+    g.fillText('falling',4,56);
+  }catch(e){}
+}
+
+function floorPlot(){
+  const c=$('floor'),g=c.getContext('2d');
+  g.fillStyle='#0d0f13'; g.fillRect(0,0,c.width,c.height);
+  if(!trail.length){g.fillStyle='#9aa3af';g.font='12px monospace';
+    g.fillText('no calibration / no target',12,150);return;}
+  let xs=trail.map(p=>p[0]),ys=trail.map(p=>p[1]);
+  let x0=Math.min(...xs)-200,x1=Math.max(...xs)+200;
+  let y0=Math.min(...ys)-200,y1=Math.max(...ys)+200;
+  const sx=v=>(v-x0)/(x1-x0)*c.width, sy=v=>c.height-(v-y0)/(y1-y0)*c.height;
+  g.strokeStyle='#2d323b'; g.strokeRect(0.5,0.5,c.width-1,c.height-1);
+  trail.forEach((p,i)=>{
+    const t=i/trail.length;
+    g.fillStyle=i===trail.length-1?'#4ade80':`rgba(96,165,250,${0.15+0.6*t})`;
+    const r=i===trail.length-1?5:2.5;
+    g.beginPath(); g.arc(sx(p[0]),sy(p[1]),r,0,7); g.fill();
+  });
+  g.fillStyle='#9aa3af'; g.font='10px monospace';
+  g.fillText(x0.toFixed(0)+' mm',4,c.height-4);
+  g.fillText(x1.toFixed(0),c.width-52,c.height-4);
+  g.fillText(y1.toFixed(0),4,12);
+}
+
+async function tick(){
+  try{
+    const s=await (await fetch('/state',{cache:'no-store'})).json();
+    last=s; W=s.w_img; H=s.h_img;
+    if(!synced&&s.settings){            // adopt the board's values once
+      for(const k of ['exposure','gain','margin','row_step'])
+        if(s.settings[k]!==undefined) $(k).value=s.settings[k];
+      synced=true;
+    }
+    $('hdr').textContent=`${s.w_img}x${s.h_img}  ${s.fps} fps  `+
+      `${(s.mem_free/1024).toFixed(0)} KiB free  ${s.accel||''}`;
+    $('fps').textContent=` ${s.fps} fps`;
+    const rows=[
+      ['status', s.hit?'<span class="ok">TRACKING</span>':
+        '<span class="bad">no target</span>'],
+      ['x (px)', s.hit?s.x.toFixed(2):'-'],
+      ['base (px)', s.base>=0?s.base:'-'],
+      ['width (px)', s.w||'-'],
+      ['range est', s.hit?s.z.toFixed(0)+' mm':'-'],
+      ['score', s.score+' / '+s.thresh],
+      ['floor', s.floor],
+      ['width window', s.width_window.join(' .. ')+' px'],
+      ['background', s.have_bg?'<span class="ok">learned</span>':
+        '<span class="bad">missing</span>'],
+      ['calibration', s.calibrated?'<span class="ok">'+s.calib_points+' pts</span>':
+        '<span class="bad">'+s.calib_points+' pts, unsolved</span>'],
+      ['sensor locks', locksText(s.locks)],
+    ];
+    $('kv').innerHTML=rows.map(r=>`<span>${r[0]}</span><span>${r[1]}</span>`).join('');
+    const xy=s.xy;
+    $('xykv').innerHTML=xy?
+      `<span>X</span><span>${xy[0].toFixed(0)} mm</span>
+       <span>Y</span><span>${xy[1].toFixed(0)} mm</span>`:
+      '<span>X</span><span>-</span><span>Y</span><span>-</span>';
+    if(xy){trail.push(xy); if(trail.length>60)trail.shift();}
+    bar(); floorPlot();
+  }catch(e){}
+}
+
+async function post(url,body,okmsg,cb){
+  $('msg').textContent='...';
+  try{
+    const r=await fetch(url,{method:'POST',body:JSON.stringify(body||{})});
+    const j=await r.json();
+    if(cb)cb(j);
+    else $('msg').textContent=j.ok===false?('error: '+(j.msg||'failed')):(okmsg||'ok');
+  }catch(e){$('msg').textContent='request failed';}
+  tick();
+}
+
+function applySettings(){
+  post('/api/set',{exposure:+$('exposure').value,gain:+$('gain').value,
+                   margin:+$('margin').value,
+                   row_step:+$('row_step').value},'settings applied');
+}
+function capture(){
+  post('/api/calib/add',{X:+$('cx').value,Y:+$('cy').value},null,j=>{
+    $('msg').textContent=j.ok?
+      `captured pixel (${j.px[0].toFixed(1)}, ${j.px[1].toFixed(1)}) -- ${j.n} point(s)`:
+      'error: '+j.msg;
+  });
+}
+function solved(j){
+  $('msg').textContent=j.ok?
+    `solved on ${j.n} points: mean ${j.residual_mean.toFixed(1)} mm, `+
+    `max ${j.residual_max.toFixed(1)} mm`+
+    (j.residual_max>50?' -- high, check your coordinates':''):
+    'error: '+j.msg;
+}
+
+setInterval(tick,400);
+setInterval(()=>{if($('auto').checked)grab();},1200);
+setInterval(profiles,1500);
+tick(); grab(); profiles();
+</script>
+</body>
+</html>
